@@ -1,0 +1,32 @@
+name: Challenge a decision
+description: Argue that a decision in the register should change
+title: "D?: "
+labels: ["decision-change"]
+body:
+  - type: input
+    id: decision
+    attributes:
+      label: Decision
+      description: The decision number from spec/12-decisions.md.
+      placeholder: "e.g. D4"
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is wrong with it
+      description: The case where the decision fails, or the assumption that does not hold.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Code references, measurements, customer cases or documentation.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: What the decision should say instead, and which other decisions or sections it affects.
