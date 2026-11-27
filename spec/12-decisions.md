@@ -40,6 +40,7 @@
 | D35 | Applying incremental refreshes (amends D19) | By default the delta is merged into a copy of the current table, which is then swapped in, so pinning, rollback and reproducibility hold. `IN_PLACE` is an option for very large objects and gives them up. | proposed |
 | D36 | Incremental correctness (amends D19) | `asOf` is the start of the last successful refresh in both modes. Each refresh re-reads from the watermark minus the capability's `lookback`. `fullReconcile` is required for incremental replicas. | proposed |
 | D37 | Substitution (amends D17) | A replica has `substitution`: `OPT_IN` (default) or `ALL_MATCHING`. A `.wsrc` without a `replica` element reads a replica only under `ALL_MATCHING`, which an admin sets after seeing the jobs that will switch. | proposed |
+| D38 | Replica identity (amends D9) | Library name and id without the version. A library configuration change forces a rebuild. Secure parameters as salted hashes. Defined normalisation. `projection` parameters match by containment. Replicas are listed in the Data Catalog. | proposed |
 
 ---
 

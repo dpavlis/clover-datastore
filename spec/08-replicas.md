@@ -34,7 +34,7 @@ Only the connector's author knows which parameter carries a "modified since" val
     },
     "parameters": {
       "OBJECT": "identity",
-      "FIELDS": "identity",
+      "FIELDS": "projection",
       "WHERE": "identity",
       "BATCH_SIZE": "volatile",
       "TIMEOUT": "volatile"
@@ -75,11 +75,16 @@ The two layers combine as follows:
 
 ## 8.3 Identity and parameters
 
-Replica identity is: library code + connector path + the normalised **identity** parameters, sorted by name.
+**D38 (proposed).** Replica identity is: library instance + connector path + the normalised **identity** parameters, sorted by name.
 
+- **The library instance is named without its version.** An installed library's sandbox code is `name[_version][~libraryId]`, for example `DataCatalogCoverageLib_0.6`, and that code is what a `.wsrc` stores in `libraryCode`. The identity uses the name and the library id and leaves the version out. Otherwise every upgrade would orphan all replicas of the library. How Wrangler sources are re-pointed after an upgrade is still to be confirmed (Q23).
+- **A change to the library's configuration forces a rebuild.** A connector's endpoint and credentials come from the library's `library.prm` and its OAuth2 connection, and an admin can change both in place. Pointing the same library at another Salesforce org changes every row without changing the identity. So when `LibraryManager` reports a configuration change (the notification that already clears Wrangler preview caches), each replica of that library is marked `INCOMPATIBLE`: it is not served, and its next refresh is a FULL rebuild. Two installations of one library, such as production and sandbox, have different library ids and so different replicas.
+- **Normalisation** is: trim surrounding whitespace; for a parameter of a list type (`fields`, `sortKey`), split, trim and, for `projection` parameters, sort the items. Values are otherwise compared exactly, including case.
+- **Secure parameters** enter the identity as a salted hash of the decrypted value. The catalog stores them encrypted with the server's secure-parameter key, and the admin UI, REST and MCP never return them.
 - `volatile` parameters are dropped from the identity. Undeclared parameters count as identity.
+- **`projection` parameters are matched by containment, not equality.** A `projection` parameter is a list of output fields (`FIELDS` in the example). A replica serves a source whose identity parameters are equal and whose projection list is a **subset** of the replica's. The reader then selects only the requested columns, in the requested order. The author declares a parameter as `projection` only if each item is an output field name and leaving an item out changes nothing but that column. When several replicas could serve a source, the one with the fewest fields is used. This is not the parameter-to-predicate pushdown deferred below: no row filter is derived.
 - `NUM_OF_PREVIEW_RECORDS` is never part of the identity. `LibraryManager` already excludes it from connector parameters.
-- **Values must be concrete.** Wrangler applies runtime parameter values to the source before conversion (`WranglerManager.loadWModelAttributes`, called from `translateJobForExecution`). A value can still contain a `${…}` reference that is resolved only when the generated graph runs. The resolver expands such references against the sandbox's parameters before hashing, the same values the generated graph would see. If a reference cannot be resolved at that point (for example it depends on a value known only at graph runtime), the source does not match any replica: it is read live and the run logs a warning naming the parameter (D15).
+- **Values must be concrete.** Wrangler applies runtime parameter values to the source before conversion (`WranglerManager.loadWModelAttributes`, called from `translateJobForExecution`). A value can still contain a `${…}` reference that is resolved only when the generated graph runs. The resolver expands such references against the sandbox's parameters before hashing, the same values the generated graph would see. If a reference cannot be resolved at that point (for example it depends on a value known only at graph runtime), the source does not match any replica: it is read live and the run logs a warning naming the parameter (D15). *To verify in P3:* the generated graph links no parameter file today (`MGraph.addParameterFile` has no callers), so which values a `${…}` reference in a connector parameter actually resolves to must be confirmed before the resolver is built.
 - **The library version is not part of the identity.** On every use, the connector's current output metadata is compared with the replica's `connectorSchemaHash`. A mismatch marks the replica `INCOMPATIBLE`. It is not served, and the next refresh is a FULL rebuild.
 - **Pushdown parameters, which answer a narrower request from a broader replica, are deferred** (former Q8). They need a parameter-to-predicate mapping that only the connector author can define, and identity-only matching is correct, if wasteful.
 - **Connectors that use the caller's own credentials are not replicable** in the first release (former Q13, see [§8.8](#88-security)).

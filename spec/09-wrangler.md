@@ -33,6 +33,8 @@ public interface SourceReplicaProvider {
 - The resolver runs with the job's user and checks `READ` on the replica. A user without access gets the live source, not an error, which is the same experience as before replicas existed.
 - Job tracking (`createInitialTracking`) shows the source as "replica · as of …" and records the snapshot id.
 - A `DORMANT` replica (data dropped after long disuse) behaves as `EMPTY` for this conversion, and the demand triggers its refresh.
+- **Matching** follows [§8.3](08-replicas.md#83-identity-and-parameters) (D38). When the replica holds more fields than the source asks for (a `projection` parameter), the `STORE_READER` selects the requested fields in the requested order, so the reader's output metadata equals the connector's for those parameters.
+- **Replicas are also listed in the Data Catalog**, under the connector they belong to, with their age ("Salesforce Account · replica · as of 01:12"). Adding one to a workspace creates an ordinary connector `.wsrc` with the replica's parameters and `mode: PREFER`. A user can so choose a replica knowingly, without having to reproduce its parameters by hand.
 
 **D10.** Replica resolution happens in the Server-side conversion through `SourceReplicaProvider`, once per conversion, and pins a snapshot. Graphs never decide at runtime between live and replica.
 

@@ -41,6 +41,8 @@ Exit criteria per phase:
   - A run pinned to a `COPY_AND_SWAP` replica reads the same rows before and after an incremental refresh (D35).
   - An incremental replica whose source did not change for longer than `hardExpiry` stays `FRESH` while its refreshes succeed (D36).
   - A row committed at the source after a refresh, with a timestamp before that refresh's watermark and within `lookback`, is in the replica after the next refresh (D36).
+  - Changing a library's configuration marks its replicas `INCOMPATIBLE`. Upgrading the library to a version with the same connector output keeps them (D38).
+  - A source asking for a subset of a replica's `projection` fields is served from it with exactly those columns (D38).
   - A FULL refresh that returns more than `maxShrink` fewer rows is refused.
   - A library upgrade that changes connector metadata marks its replicas `INCOMPATIBLE`.
   - An incremental refresh applies Salesforce tombstones as deletes, and a gap longer than `maxGap` escalates to FULL.
