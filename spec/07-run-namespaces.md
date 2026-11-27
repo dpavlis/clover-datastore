@@ -107,7 +107,26 @@ Publish modes:
 - `APPEND`: `INSERT … SELECT` inside the DB
 - `MERGE`: upsert by key, inside the DB
 
-`REPLACE` is the only one that is O(1) and atomic on every dialect.
+`REPLACE` is atomic on every dialect. It is O(1) only when the table was built to be published.
+
+**D33 (proposed). Publishable tables.** A table created as an ordinary `TEMPORARY` run table cannot always be published by moving a pointer:
+
+- On PostgreSQL it is `UNLOGGED` ([§7.11](#711-physical-storage)). Making it permanent needs `ALTER TABLE … SET LOGGED`, which rewrites the table and writes all of it to the WAL.
+- With `datastore.run.schema` set, it sits in the run schema. Oracle cannot move a table to another schema without copying it.
+
+So `StoreOperation CREATE` and `StoreWriter createIfMissing` take `publishTo=<ns.dataset>`:
+
+| Aspect | A table created with `publishTo` |
+|---|---|
+| Physical placement | Created logged, in the target namespace's schema, with the `DS_` prefix |
+| Structure | Created with the target's schema, key and indexes, so the swap needs no rebuild. Indexes may be built after the load, before publish. |
+| Permission | Creating it requires `MANAGE` on the target namespace, the same as publishing |
+| Catalog | Listed in the run namespace as `run.x` until it is published or the tree ends. If the tree ends first, it is dropped or kept like any `TEMPORARY` dataset. |
+| Publish `REPLACE` | A pointer swap: O(1) on all three dialects |
+
+Publishing a table created **without** `publishTo` still works. The store then copies it (`INSERT … SELECT` into a new table in the target's schema) and swaps. The job log says that a copy was made and names `publishTo` as the way to avoid it.
+
+After any publish or bulk load the store refreshes optimizer statistics on the new table (`ANALYZE` or the dialect's equivalent), so that queries on it get a sound plan at once.
 
 ## 7.5 Namespace lifecycle
 
@@ -207,7 +226,7 @@ Ordinary quotas apply to both. This keeps the load a busy Data App puts on the s
 
 ## 7.11 Physical storage
 
-Run tables use their own name prefix (`DSR_`) and, where configured, a separate DB schema. Maintenance and space accounting can then treat them apart from shared data.
+Run tables use their own name prefix (`DSR_`) and, where configured, a separate DB schema. Maintenance and space accounting can then treat them apart from shared data. The exception is a table created with `publishTo` (D33): it is built where it will be published, and is accounted to the run namespace through the catalog until then.
 
 | Dialect | `TEMPORARY` tables | Drop |
 |---|---|---|
