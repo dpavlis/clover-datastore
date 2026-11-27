@@ -5,7 +5,7 @@
 |---|---|---|
 | `StoreReader` | Structured read of `ns.dataset` (Base §4) | Metadata from the catalog (`MetadataProvider`), freshness options for replicas, output of freshness info as dictionary or graph properties |
 | `StoreWriter` | Append, upsert or replace into `ns.dataset` (Base §8) | `createIfMissing` with lifetime, expected schema version, batch and commit size, rejected-record port |
-| `StoreQuery` | Dataset SQL (Base §5) | Result metadata derived from the compiler at design time through the server |
+| `StoreQuery` | Dataset SQL (Base §5, [§10.2](#102-sql-scope-d42)): a `SELECT` with output records, or an `INSERT INTO … SELECT` with a row count | Result metadata derived from the compiler at design time through the server |
 | `StoreOperation` | Jobflow-style control: CREATE, DROP, TRUNCATE, ALTER, PUBLISH, REFRESH_REPLICA, WAIT_FRESH, plus CREATE_NAMESPACE, EXTEND_TTL and DROP_NAMESPACE for scratch namespaces (D20) | One operation per input record, like the file operation components |
 | `storeLookup` | Lookup table over a lookup index | [§9.5](09-wrangler.md#95-lookups) |
 | CTL functions (D28) | `boolean storeExists(string name)`, `long storeRowCount(string name)`, `date storeAsOf(string name)` (null unless a replica), `string storeState(string name)` (the replica state, or `ACTIVE`) | Read-only metadata for jobflow conditions, in `cloveretl.ctlfunction.commercial`. They resolve `run.*` within the calling run and need `READ`. Server runs only, like the components. No data access or SQL from CTL: rows are read through components, or through `storeLookup` with CTL's existing `lookup(name).get(key)` syntax. |
@@ -60,6 +60,48 @@ datastore.rest.maxInlineBytes=
 datastore.rest.uploadTtl=PT24H
 datastore.rest.defaultRateLimit=
 ```
+
+## 10.2 SQL scope (D42)
+
+**D42 (proposed, [issue #3](https://github.com/dpavlis/clover-datastore/issues/3)). Dataset SQL is full SQL over store datasets, not a restricted query form.** A developer who knows SQL on PostgreSQL, Oracle or SQL Server should be able to write the query they would write there. The same language is accepted by `StoreQuery`, REST `/query` and MCP `store_query`.
+
+**What is supported**
+
+| Area | Supported |
+|---|---|
+| Joins | Inner, left, right and full outer, cross; any number of datasets, across namespaces, including a dataset joined to itself |
+| Grouping | `GROUP BY`, `HAVING`, the standard aggregates, `DISTINCT`, `GROUPING SETS` / `ROLLUP` / `CUBE` |
+| Sub-selects | Scalar subqueries, `IN` / `EXISTS` / `ANY`, correlated subqueries, derived tables in `FROM`, common table expressions (`WITH`) |
+| Set operations | `UNION [ALL]`, `INTERSECT`, `EXCEPT` |
+| Window functions | `OVER (PARTITION BY … ORDER BY …)` with ranking and aggregate functions |
+| Ordering and limits | `ORDER BY`, `OFFSET` / `FETCH` (and `LIMIT`) |
+| Expressions | `CASE`, `CAST`, arithmetic, string, date and numeric functions |
+| Writing | `INSERT INTO ns.dataset [(fields)] SELECT …` and `INSERT INTO … VALUES …` |
+| Parameters | Named bind parameters, never string substitution |
+
+**How it stays inside the store's rules.** The statement is not sent to the database as written. As Base §5 describes, the core parses and validates it with Calcite against the catalog, then generates SQL in the database's dialect. In that step:
+
+- every `namespace.dataset` is replaced by its pinned physical table ([§6.2](06-namespaces.md#62-catalog-model)), so the statement reads one version of each dataset
+- `READ` is checked on every dataset read, and `WRITE` on the target of an `INSERT`
+- the row policy of each dataset is placed below its scan, so a join, a subquery or an aggregate can never see a row the caller may not read
+- names that are not store datasets are refused. A statement cannot reach catalog tables, other schemas or database functions with side effects.
+- `datastore.query.timeout` and `datastore.query.maxRows` apply
+
+**`INSERT INTO … SELECT`** runs entirely inside the database. No row passes through the engine, so it is the fast way to derive one dataset from others.
+
+- The target may be a shared or scratch dataset, or `run.x`. A replica is never a valid target.
+- It is one transaction, coordinated through the lease registry like any other write (D32), and it counts against quotas.
+- The selected columns must match the target's fields by name, or by position when a field list is given. Types follow the store's type mapping ([§5.5](05-architecture.md#55-type-model)).
+- `StoreQuery` then has no output records. It returns the number of rows written, on an optional output port and in the job log.
+- Through MCP an `INSERT` is a write tool, gated like the other write tools. Through REST it needs a token with `WRITE` (D34).
+
+**Functions and portability.** The three databases do not have the same functions.
+
+- A **portable set** behaves the same on all three: the functions Calcite translates for each dialect. It is listed in the documentation, and a statement that uses only these runs unchanged on any store database.
+- **Functions of the store's own database** are also accepted, provided they are on an allow-list of side-effect-free functions for that dialect. The validator marks such a statement *not portable*, and Designer shows the mark. This gives developers what the database offers without tying every deployment to the smallest common set.
+- Whether the allow-list approach, or the portable set alone, is the right rule is open (Q28).
+
+**Not supported in the first release:** `UPDATE`, `DELETE` and `MERGE` statements, and DDL such as `CREATE TABLE … AS SELECT`. Rows are changed through `StoreWriter` (upsert, replace) and datasets are created through `StoreOperation`. Whether these statements should follow is Q27.
 
 ---
 

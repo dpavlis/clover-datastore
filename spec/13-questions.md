@@ -29,6 +29,8 @@
 | Q24 | API tokens for applications: a new store object, or an existing Server mechanism (D34)? |
 | Q25 | Should restarting a failed job let the new tree adopt the kept run namespace of the tree it came from? A restart always starts a new root today, so the restarted job cannot address the old tree's `run.*` data except read-only by name ([§7.3](07-run-namespaces.md#73-dataset-lifetimes-inside-a-run-namespace)). |
 | Q26 | May a replica subgraph write to the store itself, instead of only emitting records for the store to apply (D40)? Emitting keeps validation, atomic swap and snapshots uniform. Writing directly would give the author full freedom and lose those guarantees. |
+| Q27 | Should dataset SQL also accept `UPDATE`, `DELETE`, `MERGE` and `CREATE TABLE … AS SELECT` (D42)? |
+| Q28 | Functions in dataset SQL: the portable set plus an allow-list of the store database's own functions (proposed in D42), or the portable set only? |
 
 ---
 

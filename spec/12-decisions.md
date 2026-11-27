@@ -44,6 +44,7 @@
 | D39 | Keeping temporary run data (issue #1, replaces D21) | `TEMPORARY` data is dropped at tree end in every case by default. The job config switch `datastore_keep_namespace` (`NEVER`, `ON_FAILURE`, `ALWAYS`) keeps it for debugging, within a storage budget. The definition of a failed tree is kept from D21. | proposed |
 | D40 | Replica refresh (issue #2, replaces D9) | The capability in `library.json` names a paired replica subgraph written by the connector's author. The store passes it a mode and an opaque state, and applies the FULL or DELTA result it returns. Key and other fields are needed only for merging; change detection is not declared to the store. Without a replica subgraph the connector is run as FULL. Instances stay in the store catalog. | proposed |
 | D41 | Replica management (issue #2) | A Replicas page in the Server Console: every configured replica with last update, time until obsolete, rows and size; actions refresh, purge, pause, roll back, edit, delete. The same through REST. | proposed |
+| D42 | SQL scope (issue #3) | Full SQL over store datasets in `StoreQuery`, REST and MCP: joins, grouping, sub-selects, set operations, window functions, and `INSERT INTO … SELECT`. Compiled by the core, so ACL, row policy and pins always apply. | proposed |
 
 ---
 

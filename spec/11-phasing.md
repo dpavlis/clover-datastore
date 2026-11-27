@@ -21,6 +21,7 @@ Exit criteria per phase:
   - The DM test suite passes on the extracted storage layer.
 - **P1**:
   - Base §10 join and aggregate checks pass from REST and from a graph, with row policy applied below each scan.
+  - A statement with a correlated subquery, a common table expression, a window function and a `UNION` gives the same result on all three databases. `INSERT INTO … SELECT` writes its rows without any passing through the engine, and is refused on a replica (D42).
   - Without the `dataStore` licence module, every store entry point refuses with a licence message.
   - A namespace linked to a sandbox follows a change of that sandbox's permissions at once.
   - A date written on a node in one JVM time zone reads back as the same instant on a node in another.
