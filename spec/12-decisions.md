@@ -36,6 +36,7 @@
 | D31 | Worker pool (amends D4) | The store's worker pool is private to the lease executor and not bound in JNDI. With leases on, object ACL is advisory against user Java code in the worker; row policy stays a hard boundary. The default of `datastore.lease.mode` is open (Q20). | proposed |
 | D32 | Lease registry and pin scope | Issued leases are recorded in the catalog with a heartbeat. Replace, truncate, alter and drop coordinate through it; a table with a lease or a pin is never dropped. A job tree pins a dataset version once for all its members; REST pins per request with a snapshot token. | proposed |
 | D33 | Publishable tables | A run table created with `publishTo` is built logged, in the target's schema, with the target's indexes, so publish `REPLACE` is a pointer swap on all three databases. Without it, publish copies. Statistics are refreshed after each load and publish. | proposed |
+| D34 | REST for applications | API tokens tied to a user and narrowable to namespaces. Keyset paging with a snapshot token. Small writes with idempotency keys and schema version. Upload sessions as REST build-then-publish. Asynchronous operations, rate limits, one error shape. | proposed |
 
 ---
 

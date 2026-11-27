@@ -3,8 +3,8 @@
 
 ```mermaid
 flowchart LR
-  P0["P0 · PoC<br/>Calcite compile on 3 DBs<br/>lease executor + worker pool,<br/>lease vs proxied throughput,<br/>extract managed storage layer"] --> P1["P1 · Store core<br/>shared namespaces, catalog,<br/>Reader/Writer/Query, REST read,<br/>ACL + row policy"]
-  P1 --> P2["P2 · Run scopes<br/>run namespaces, lifetimes,<br/>cleanup + sweeper, publish, quotas"]
+  P0["P0 · PoC<br/>Calcite compile on 3 DBs<br/>lease executor + worker pool,<br/>lease vs proxied throughput,<br/>extract managed storage layer"] --> P1["P1 · Store core<br/>shared namespaces, catalog,<br/>Reader/Writer/Query, lease registry,<br/>REST read + small writes + tokens,<br/>ACL + row policy"]
+  P1 --> P2["P2 · Run scopes<br/>run namespaces, tree record, lifetimes,<br/>cleanup + sweeper, publish, quotas,<br/>REST upload sessions"]
   P1 --> P3["P3 · Replicas<br/>FULL + INCREMENTAL refresh,<br/>schedules, freshness contract,<br/>retention, admin UI + approvals"]
   P3 --> P4["P4 · Wrangler<br/>SourceReplicaProvider, replica-fed<br/>previews, source browse, staged files,<br/>lookup index + storeLookup"]
   P2 --> P4
@@ -26,6 +26,7 @@ Exit criteria per phase:
   - A date written on a node in one JVM time zone reads back as the same instant on a node in another.
   - A truncate waits for a leased writer on another node to finish, and no new lease is issued meanwhile (D32).
   - Two children of one jobflow read the same version of a dataset across a publish between them (D32).
+  - A REST client paging through a dataset sees one version across a publish, a repeated write with the same idempotency key writes once, and a token limited to one namespace cannot read another (D34).
 - **P2**:
   - A tree with a daemon child, a crash mid-run and a cluster failover leaves no orphan tables after one sweeper interval.
   - A child failure that the root handles keeps the tree's data for `retainOnFailure`.
@@ -34,6 +35,7 @@ Exit criteria per phase:
   - `run.*` in a tree whose root has no run record is refused, naming `saveRunRecord` (D30).
   - Purging the execution history does not drop a `RETAINED` dataset before its retention ends, and does not release a namespace while a daemon member runs (D30).
   - Publishing a table created with `publishTo` moves no rows on any of the three databases (D33).
+  - A REST upload session is invisible to readers until its commit, and an abandoned one is dropped (D34).
 - **P3**:
   - A failed refresh never changes what readers see. Snapshot rollback works.
   - A FULL refresh that returns more than `maxShrink` fewer rows is refused.

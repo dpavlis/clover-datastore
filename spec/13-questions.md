@@ -23,6 +23,7 @@
 | Q18 | ~~Should incremental refresh move from P5 into P3? FULL refresh already covers the nightly-unload scenario, and the Salesforce components already support `includeDeleted`.~~ Decided: D19. |
 | Q19 | ~~Data service requests using `run.*`?~~ Decided: D23. |
 | Q20 | Default of `datastore.lease.mode`: `ALL` (as D4 has it), or `SYSTEM_JOBS`, so that object ACL is a hard boundary unless a deployment opts out? The P0 throughput comparison of leased and proxied loads should inform this ([§5.3](05-architecture.md#53-data-plane-how-records-travel), D31). |
+| Q24 | API tokens for applications: a new store object, or an existing Server mechanism (D34)? |
 | Q25 | Should restarting a failed job let the new tree adopt the kept run namespace of the tree it came from? A restart always starts a new root today, so the restarted job cannot address the old tree's `run.*` data except read-only by name ([§7.3](07-run-namespaces.md#73-dataset-lifetimes-inside-a-run-namespace)). |
 
 ---
