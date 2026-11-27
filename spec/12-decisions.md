@@ -33,6 +33,7 @@
 | D28 | CTL functions (Q11) | Read-only metadata functions: `storeExists`, `storeRowCount`, `storeAsOf`, `storeState`. No data or SQL from CTL. | decided |
 | D29 | Incremental replica history (Q12) | No SCD2 or as-of reads. Delta batches kept from P3 under snapshot retention. A "changes since batch N" feed in P5, failing loudly when batches are gone. | decided |
 | D31 | Worker pool (amends D4) | The store's worker pool is private to the lease executor and not bound in JNDI. With leases on, object ACL is advisory against user Java code in the worker; row policy stays a hard boundary. The default of `datastore.lease.mode` is open (Q20). | proposed |
+| D32 | Lease registry and pin scope | Issued leases are recorded in the catalog with a heartbeat. Replace, truncate, alter and drop coordinate through it; a table with a lease or a pin is never dropped. A job tree pins a dataset version once for all its members; REST pins per request with a snapshot token. | proposed |
 
 ---
 

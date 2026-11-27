@@ -83,7 +83,7 @@ sequenceDiagram
   JF->>AP: StoreOperation PUBLISH run.customers_new → crm.customers (mode REPLACE)
   AP->>LC: check MANAGE on crm, schema compatible with crm.customers
   LC->>DB: BEGIN, crm.customers.current_table := DS_005512, old table → RETIRED, COMMIT
-  Note over LC,DB: readers holding the old pointer finish on the old table, RETIRED tables are dropped by maintenance after a grace period
+  Note over LC,DB: readers holding the old pointer finish on the old table, a RETIRED table is dropped by maintenance once no lease or tree pin refers to it (D32)
 ```
 
 Publish modes:
@@ -153,8 +153,8 @@ Parallel children often write the same dataset.
 |---|---|
 | Create | `CREATE IF NOT EXISTS` with a schema equality check. Two children creating the same dataset with the same schema both succeed. Different schemas fail. |
 | Append | Concurrent appends allowed, in separate transactions |
-| Replace or truncate | Takes a dataset write lock (catalog row lock). Concurrent appends wait or fail per `lockTimeout`, reusing the DM's `SchemaHandler` lock-timeout support. |
-| Schema change | Exclusive lock. Bumps the version. Writers holding an older version fail fast. |
+| Replace or truncate | Done by the core, through the lease registry (D32, [§5.3](05-architecture.md#53-data-plane-how-records-travel)). The core marks the dataset as *changing*, which stops new leases, then waits for the write leases on it to finish, or fails per `lockTimeout`. A leased writer cannot take a catalog lock itself, because the worker account has no rights on the catalog. |
+| Schema change | The same protocol, waiting for read leases too. It bumps the version. A lease request that states an older version is refused. A writer never holds a stale lease across the change, because the change waits for it. |
 | Read-your-writes | A writer's commit (per batch or at component end, configurable like `DBOutputTable`'s commit) makes rows visible to siblings |
 
 ## 7.9 Sharing with jobs outside the tree (Q5)

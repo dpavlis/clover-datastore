@@ -24,6 +24,8 @@ Exit criteria per phase:
   - Without the `dataStore` licence module, every store entry point refuses with a licence message.
   - A namespace linked to a sandbox follows a change of that sandbox's permissions at once.
   - A date written on a node in one JVM time zone reads back as the same instant on a node in another.
+  - A truncate waits for a leased writer on another node to finish, and no new lease is issued meanwhile (D32).
+  - Two children of one jobflow read the same version of a dataset across a publish between them (D32).
 - **P2**:
   - A tree with a daemon child, a crash mid-run and a cluster failover leaves no orphan tables after one sweeper interval.
   - A child failure that the root handles keeps the tree's data for `retainOnFailure`.

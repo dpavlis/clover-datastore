@@ -82,12 +82,31 @@ Today DM components send every record through `IAuthorityProxy`. For a worker, t
 **The lease** is a short-lived, single-use object the core issues per component and statement. It holds:
 
 - the compiled SQL and its bind values, with the row policy already in the statement
-- the pinned physical tables (snapshot pinning, [§8.6](08-replicas.md#86-consumer-contract-and-snapshot-pinning))
+- the physical tables, as pinned for the caller's tree (snapshot pinning, [§8.6](08-replicas.md#86-consumer-contract-and-snapshot-pinning))
 - the operation kind (read, append, upsert, bulk load)
 - the run id
 - an expiry
 
 The worker executes exactly that statement. It never builds SQL from logical names, and it never sees the catalog. A job on the core JVM uses the same lease, executed in process.
+
+The expiry (`datastore.lease.ttl`) limits how long a lease may wait before it **starts** executing. It does not limit how long the statement runs; that is the job's own timeout. Aborting the job cancels the statement in the worker.
+
+**Lease registry (D32, proposed).** The core records every issued lease in a catalog table, `LEASE`:
+
+- dataset, physical table and operation kind
+- run id, root run id and node
+- issue time and last heartbeat (the lease executor reports every `datastore.lease.heartbeat`)
+
+The row is removed when the executor reports completion. A lease whose heartbeat is older than three intervals, and whose run is final, is removed by maintenance. The registry is the single source for four things:
+
+| Use | Rule |
+|---|---|
+| Write coordination ([§7.8](07-run-namespaces.md#78-concurrency-inside-a-tree)) | Replace, truncate, alter and drop are done by the core. They check the registry for leases on the dataset and wait or fail per `lockTimeout`. While one of them is pending, no new lease is issued for that dataset. |
+| Pins ([§8.6](08-replicas.md#86-consumer-contract-and-snapshot-pinning)) | A physical table with a lease, or with a tree pin, is never dropped. This replaces the fixed grace period for `RETIRED` tables. |
+| Forced release ([§7.6](07-run-namespaces.md#76-detecting-that-a-tree-has-finished)) | Releasing a namespace by force lists the leases it will break. |
+| Visibility | "Who is using this dataset now", with a cancel action, in the admin UI. |
+
+The worker account still has no rights on catalog tables. The executor reports through the gRPC API, and the core writes the registry.
 
 **Worker connections (D31, proposed).** Each worker gets a connection pool for the store DB that is **private to the lease executor**:
 
@@ -222,7 +241,8 @@ datastore.jdbc.password=
 datastore.jdbc.worker.username=       # DML-only account used by leases in workers (§5.3)
 datastore.jdbc.worker.password=
 datastore.lease.mode=ALL              # ALL | SYSTEM_JOBS | OFF (§5.3)
-datastore.lease.ttl=PT10M
+datastore.lease.ttl=PT10M             # a lease must start executing within this time (§5.3)
+datastore.lease.heartbeat=PT30S       # lease executor heartbeat to the lease registry (D32)
 datastore.worker.pool.maxSize=        # private store pool in each worker (D31)
 datastore.tablePrefix=DS_
 datastore.run.retainOnFailure=PT24H   # how long a kept tree's TEMPORARY data stays (§7.7)

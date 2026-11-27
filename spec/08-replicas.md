@@ -187,12 +187,16 @@ Each consumer (StoreReader, Wrangler source, REST read, SQL) may state `maxStale
 
 `hardExpiry` overrides `USE_WITH_WARNING`: an expired replica is never served, whether silently or with a warning.
 
-**Pinning.** A consumer resolves the replica to a `snapshotId` once:
+**Pinning.** A consumer resolves the replica to a `snapshotId` once, at the scope given in [§6.2](06-namespaces.md#62-catalog-model) (D32):
 
-- a job, when it is converted or starts
-- a SQL statement, when it is compiled
+- a job: once per **tree**, at the first resolution by any member (for a Wrangler job, at conversion). The pin is stored with the tree's namespace record.
+- a REST or MCP read: once per request, carried across pages by a snapshot token
+- a SQL statement outside a tree: when it is compiled
+- a tree whose root has no run record (D30) has no namespace record to hold a pin. Each of its statements resolves the pointer on its own.
 
-The whole run then reads that snapshot, even if a refresh swaps the pointer meanwhile. The run's tracking records the snapshot, which makes a run reproducible ("which data did this job see?"). Retention never drops a snapshot that a running job has pinned. Pins are released at run end, and the maintenance sweeper clears pins whose run is final.
+The whole tree then reads that snapshot, even if a refresh swaps the pointer meanwhile. The run's tracking records the snapshot, which makes a run reproducible ("which data did this job see?"). Retention never drops a snapshot that a tree has pinned or a lease is reading. Pins are released when the tree's namespace is released.
+
+This holds for FULL replicas and for INCREMENTAL replicas applied with `COPY_AND_SWAP`. An `IN_PLACE` replica has one table that every refresh changes, so a pin there fixes only which table is read, not its content (D35).
 
 ## 8.7 Retention
 
