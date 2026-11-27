@@ -17,6 +17,7 @@ Exit criteria per phase:
   - Base §10 acceptance checks pass.
   - A lease loads at least X rows per second from a worker with the bulk API, and proxied mode is measured for comparison (X to be set).
   - The worker account cannot run DDL, cannot touch catalog tables, and has no grant on a table with row policy.
+  - The store's worker pool cannot be opened from a graph DB connection by JNDI name (D31).
   - The DM test suite passes on the extracted storage layer.
 - **P1**:
   - Base §10 join and aggregate checks pass from REST and from a graph, with row policy applied below each scan.

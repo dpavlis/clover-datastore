@@ -89,14 +89,18 @@ Today DM components send every record through `IAuthorityProxy`. For a worker, t
 
 The worker executes exactly that statement. It never builds SQL from logical names, and it never sees the catalog. A job on the core JVM uses the same lease, executed in process.
 
-**Worker connections** follow the existing pattern for giving workers pooled DB connections (`worker.jndi.datasource[n].*`, with drivers in `worker.classpath`, by default `${clover.home}/worker-lib`). The store configures a worker datasource for its DB automatically, from its own settings. The store DB's JDBC driver must therefore be present in the worker classpath, and the server checks this at worker start.
+**Worker connections (D31, proposed).** Each worker gets a connection pool for the store DB that is **private to the lease executor**:
+
+- It is created from the store's own settings, not from `worker.jndi.datasource[n].*`, and it is **not bound in JNDI**. Pools configured through `worker.jndi.datasource` are JNDI resources in the worker, and a graph DB connection can name one. A store pool registered that way would let any graph read store tables with a plain `DBInputTable`.
+- The store DB's JDBC driver must be in the worker classpath (`worker.classpath`, by default `${clover.home}/worker-lib`). The server checks this at worker start.
+- The pool size is `datastore.worker.pool.maxSize`. A graph holds one connection per store component that is running, so this bounds the store components a node can run at once.
 
 **Two DB accounts:**
 
 - The **owner** account is used only by the core. It runs DDL, catalog writes, swaps and maintenance.
 - The **worker** account can only select, insert, update and delete on store data tables. It has no DDL rights and no rights on catalog tables. A worker therefore cannot drop tables, alter schemas or move a dataset's current-table pointer.
 
-**Trust boundary.** In lease mode, ACL and row policy bind every platform path: components, Wrangler, REST and MCP. Arbitrary user code running in a worker (a Java transform, a custom component) could open the worker pool itself and read or change any table the worker account reaches. This is the same trust level as graph DB connections today, whose credentials are also in the worker. Three rules keep the hard boundaries where they matter:
+**Trust boundary.** In lease mode, ACL and row policy bind every platform path: components, Wrangler, REST and MCP. No stock component can reach the store pool, because it is not in JNDI (D31). User **Java code** running in a worker (a Java transform, a custom component) is a different matter: the worker JVM holds the worker account's credentials, and the worker is started with the server's configuration file. Such code could connect with that account and read or change any table it reaches. So with leases on, **object ACL is enforced on platform paths and is advisory against user Java code in the worker**. This is the same trust level as graph DB connections today, whose credentials are also in the worker. Three rules keep the hard boundaries where they matter:
 
 1. **Datasets with a row policy are never leased.** The worker account has no grant on their tables, and they are always served proxied. Row policy therefore stays a hard boundary, even against user code.
 2. **`datastore.lease.mode`** (`ALL` | `SYSTEM_JOBS` | `OFF`, default `ALL`) lets a deployment that needs ACL as a hard boundary restrict leases:
@@ -219,6 +223,7 @@ datastore.jdbc.worker.username=       # DML-only account used by leases in worke
 datastore.jdbc.worker.password=
 datastore.lease.mode=ALL              # ALL | SYSTEM_JOBS | OFF (§5.3)
 datastore.lease.ttl=PT10M
+datastore.worker.pool.maxSize=        # private store pool in each worker (D31)
 datastore.tablePrefix=DS_
 datastore.run.retainOnFailure=PT24H   # how long a kept tree's TEMPORARY data stays (§7.7)
 datastore.run.retainedDefault=P7D     # retention of RETAINED run datasets unless the dataset sets its own (§7.3)

@@ -22,6 +22,7 @@
 | Q17 | ~~Staged file datasets for main Excel/CSV sources as well, or only for lookup sources (proposed for the first release)?~~ Decided: D18. |
 | Q18 | ~~Should incremental refresh move from P5 into P3? FULL refresh already covers the nightly-unload scenario, and the Salesforce components already support `includeDeleted`.~~ Decided: D19. |
 | Q19 | ~~Data service requests using `run.*`?~~ Decided: D23. |
+| Q20 | Default of `datastore.lease.mode`: `ALL` (as D4 has it), or `SYSTEM_JOBS`, so that object ACL is a hard boundary unless a deployment opts out? The P0 throughput comparison of leased and proxied loads should inform this ([§5.3](05-architecture.md#53-data-plane-how-records-travel), D31). |
 
 ---
 
