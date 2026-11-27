@@ -23,7 +23,7 @@
 | D18 | Staged file datasets (Q17) | All lookup sources, plus main sources above a size threshold. Main sources are staged only during full runs. | decided |
 | D19 | Incremental refresh (Q18) | Ships with replicas in P3, together with FULL refresh, `maxGap` escalation and `fullReconcile`. | decided |
 | D20 | Sharing outside the tree (Q5) | Scratch namespaces (TTL + ACL) now. Join token later, prepared by the `NAMESPACE_MEMBER` relation. | decided |
-| D21 | Tree outcome (Q6) | Failed if any member failed. A failed tree keeps `TEMPORARY` data for `retainOnFailure`. Plus `keepOnFailure` per dataset and `datastore.run.keepNamespace` per job. | decided |
+| ~~D21~~ | ~~Tree outcome (Q6)~~ | ~~Failed if any member failed. A failed tree keeps `TEMPORARY` data for `retainOnFailure`. Plus `keepOnFailure` per dataset and `datastore.run.keepNamespace` per job.~~ Replaced by D39. | replaced |
 | D22 | Local store (Q7) | None. Store graphs run on the Server only. | decided |
 | D23 | Data services (Q19) | `run.*` refused in `RESTJOB` trees. Use shared or scratch namespaces. | decided |
 | D24 | Namespaces and sandboxes (Q3) | Own ACL plus an optional link to one sandbox or workspace that adds live-derived grants (never `ADMIN`). Names stay global. | decided |
@@ -41,6 +41,7 @@
 | D36 | Incremental correctness (amends D19) | `asOf` is the start of the last successful refresh in both modes. Each refresh re-reads from the watermark minus the capability's `lookback`. `fullReconcile` is required for incremental replicas. | proposed |
 | D37 | Substitution (amends D17) | A replica has `substitution`: `OPT_IN` (default) or `ALL_MATCHING`. A `.wsrc` without a `replica` element reads a replica only under `ALL_MATCHING`, which an admin sets after seeing the jobs that will switch. | proposed |
 | D38 | Replica identity (amends D9) | Library name and id without the version. A library configuration change forces a rebuild. Secure parameters as salted hashes. Defined normalisation. `projection` parameters match by containment. Replicas are listed in the Data Catalog. | proposed |
+| D39 | Keeping temporary run data (issue #1, replaces D21) | `TEMPORARY` data is dropped at tree end in every case by default. The job config switch `datastore_keep_namespace` (`NEVER`, `ON_FAILURE`, `ALWAYS`) keeps it for debugging, within a storage budget. The definition of a failed tree is kept from D21. | proposed |
 
 ---
 

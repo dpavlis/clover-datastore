@@ -29,7 +29,8 @@ Exit criteria per phase:
   - A REST client paging through a dataset sees one version across a publish, a repeated write with the same idempotency key writes once, and a token limited to one namespace cannot read another (D34).
 - **P2**:
   - A tree with a daemon child, a crash mid-run and a cluster failover leaves no orphan tables after one sweeper interval.
-  - A child failure that the root handles keeps the tree's data for `retainOnFailure`.
+  - With the default switch, a tree that fails or crashes leaves no tables after one sweeper interval. With `datastore_keep_namespace=ON_FAILURE`, a child failure that the root handles keeps the tree's data for `retainOnFailure` (D39).
+  - Kept data beyond `datastore.run.keptMaxBytes` is released oldest first (D39).
   - `run.*` in a data service tree is refused with the alternatives named.
   - A scratch namespace is dropped when its TTL expires.
   - `run.*` in a tree whose root has no run record is refused, naming `saveRunRecord` (D30).

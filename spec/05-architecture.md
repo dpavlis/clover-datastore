@@ -11,6 +11,7 @@
 | Public REST | `web/WEB-INF/rest/data-store/v1/data-store-openapi.yaml`, generated module `cloverdx.server.rest-datastore`, controllers `S/api/restdatastore/v1` | Public DM REST |
 | MCP tools | `S/mcp/tool/{descriptor,catalog}/datastore`, new `ToolCategory` or reuse of `DATA_MANAGER`'s gate pattern | CLO-37003 |
 | Engine contract | New `IAuthorityProxy` methods that return leases, plus DTOs and the lease executor in `E/datastore/*`. Lease requests from workers go through `ServerAuthorityProxyApi`. Proxied fallback for row-policy datasets and `lease.mode` | DM `IAuthorityProxy` methods, `worker.jndi.datasource` |
+| Job config | `datastore_keep_namespace` added to the engine's job config keys (`E/jobconfig/PropertyKey`), resolved by `S/graph/runtime/GraphConfigManager` (D39) | `log_level` and the other job config properties |
 | Components | `cloveretl.component.commercial`: `StoreReader`, `StoreWriter`, `StoreQuery`, `StoreOperation` | DM readers and writers |
 | Lookup | `cloveretl.lookup.commercial`: `storeLookup` | `ReferenceLookupTable` |
 | Wrangler | `SourceReplicaProvider` in `E/wrangler` (Server implementation in `S/wrangler`), `STORE_READER` emitted by `WConnectorSource`, `WStoreSource` / `WStoreTarget`, lookup index and staging in the source and step conversion | `SourceCacheProvider`, `WDataSetSource` |
@@ -245,7 +246,9 @@ datastore.lease.ttl=PT10M             # a lease must start executing within this
 datastore.lease.heartbeat=PT30S       # lease executor heartbeat to the lease registry (D32)
 datastore.worker.pool.maxSize=        # private store pool in each worker (D31)
 datastore.tablePrefix=DS_
+executor.datastore_keep_namespace=NEVER  # server-wide default of the keep switch: NEVER | ON_FAILURE | ALWAYS (D39)
 datastore.run.retainOnFailure=PT24H   # how long a kept tree's TEMPORARY data stays (§7.7)
+datastore.run.keptMaxBytes=           # storage budget for all KEPT run data, oldest released first (D39)
 datastore.run.retainedDefault=P7D     # retention of RETAINED run datasets unless the dataset sets its own (§7.3)
 datastore.run.drainWarnAfter=PT6H     # report a namespace still DRAINING (daemon child) after this
 datastore.run.schema=                 # optional separate DB schema for run tables (§7.11)

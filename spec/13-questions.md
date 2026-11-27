@@ -8,7 +8,7 @@
 | Q3 | ~~Should shared namespaces be bound to sandboxes (default namespace, permission inheritance)?~~ Decided: D24. |
 | Q4 | ~~Time-zone policy for `date`?~~ Decided: D26. |
 | Q5 | ~~Can a job outside the ExecuteGraph tree join a run namespace with a root-issued token?~~ Decided: D20. |
-| Q6 | ~~Tree outcome for retention: the root's status or the worst member status?~~ Decided: D21. |
+| Q6 | ~~Tree outcome for retention: the root's status or the worst member status?~~ Decided: D21, since replaced by D39. |
 | Q7 | ~~Embedded local store for offline Designer work?~~ Decided: D22. |
 | Q8 | ~~Parameter-to-predicate pushdown in the first replica release?~~ Proposed: no, identity-only matching first ([§8.3](08-replicas.md#83-identity-and-parameters)). |
 | Q9 | ~~Where are replicas defined?~~ Proposed: D9. |

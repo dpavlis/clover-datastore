@@ -5,11 +5,11 @@
 
 - R1. A top-level job and all its descendants (ExecuteGraph, ExecuteJobflow, subgraphs, Wrangler jobs) share one namespace, isolated from every other run.
 - R2. Jobs in the tree can create, alter, write, read and drop datasets in it, and can also work with shared namespaces under normal ACL.
-- R3. Temporary datasets disappear when the tree finishes, including after a crash.
+- R3. Temporary datasets disappear when the tree finishes, including after a crash. This is the default in every case. A switch can keep them for debugging (D39).
 - R4. Results built in the run can be made visible to others atomically.
 - R5. It works when children run on other cluster nodes or in worker JVMs.
 - R6. A run that never uses the store pays nothing.
-- R7. After a failure, the data can be inspected long enough to debug it.
+- R7. When the keep switch is set, the data of a failed or crashed tree can be inspected long enough to debug it.
 
 ## 7.2 Membership and identity
 
@@ -61,7 +61,7 @@ Retention, access after the run ([§7.3](#73-dataset-lifetimes-inside-a-run-name
 
 | Lifetime | Behaviour at tree end | Use |
 |---|---|---|
-| `TEMPORARY` (default in `run`) | Dropped, subject to the tree outcome rule ([§7.7](#77-tree-outcome-and-keeping-data-for-debugging-q6)) | Staging, intermediate results, lookups |
+| `TEMPORARY` (default in `run`) | Dropped, whatever the outcome. The keep switch ([§7.7](#77-tree-outcome-and-keeping-data-for-debugging-q6)) can hold it for debugging. | Staging, intermediate results, lookups |
 | `RETAINED` | Kept, read-only, for a retention period (per dataset, default `datastore.run.retainedDefault`) | Run outputs worth inspecting, audit evidence |
 | `PUBLISHED` (an action, not a state) | The physical table is moved into a shared dataset ([§7.4](#74-publish-build-in-isolation-swap-atomically)). Nothing is left in the run namespace. | Build-then-swap |
 
@@ -137,7 +137,7 @@ stateDiagram-v2
   [*] --> ACTIVE: first run.* call in the tree
   ACTIVE --> DRAINING: root run final
   DRAINING --> RELEASING: no member run left that is not final
-  RELEASING --> KEPT: outcome rule keeps data (failure or debug switch)
+  RELEASING --> KEPT: keep switch set and it applies (D39)
   RELEASING --> RETAINED_ONLY: TEMPORARY dropped, RETAINED kept
   RELEASING --> RELEASED: nothing kept
   KEPT --> RETAINED_ONLY: keep period over, TEMPORARY dropped
@@ -170,16 +170,35 @@ The platform has no "tree finished" signal, and daemon children can outlive the 
 
 ## 7.7 Tree outcome and keeping data for debugging (Q6)
 
-**D21 (Q6). The tree counts as failed if *any* member run ended `ERROR`, `ABORTED`, `TIMEOUT` or `UNKNOWN`**, even when the root handled the failure and finished `FINISHED_OK`. A failed tree keeps its `TEMPORARY` data for `datastore.run.retainOnFailure` (state `KEPT`), so failures the root handled stay debuggable with their data. A tree with no failed member drops it at once.
+**D39 (proposed, [issue #1](https://github.com/dpavlis/clover-datastore/issues/1); replaces D21). Temporary data is always cleaned up, unless a switch says to keep it.** By default a tree's `TEMPORARY` datasets are dropped when the tree finishes, whether it succeeded, failed, was aborted or crashed. Keeping them for debugging is something a developer or an administrator turns on.
+
+**The switch** is the job config property `datastore_keep_namespace`:
+
+| Value | At tree end |
+|---|---|
+| `NEVER` (default) | Everything `TEMPORARY` is dropped at once |
+| `ON_FAILURE` | A failed tree keeps its `TEMPORARY` data for `datastore.run.retainOnFailure` (state `KEPT`). A successful tree drops it at once. |
+| `ALWAYS` | Every tree keeps it for `datastore.run.retainOnFailure`, whatever the outcome |
+
+**When a tree counts as failed** (kept from D21). If *any* member run ended `ERROR`, `ABORTED`, `TIMEOUT` or `UNKNOWN`, even when the root handled the failure and finished `FINISHED_OK`. A crash is covered: the runs of a crashed node are set to `UNKNOWN` when the node restarts or is declared dead, and the sweeper then applies the switch ([§7.6](#76-detecting-that-a-tree-has-finished)).
 
 The outcome is computed at `RELEASING` from the members' run records (the same `root_run_id` query as [§7.6](#76-detecting-that-a-tree-has-finished)), so no member needs to report anything.
 
-Two switches adjust that rule:
+**Where the switch is set.** It is read once, for the root job, through the existing job configuration (`GraphConfigManager.getPropertyValue`), so it can be set at any of the usual levels:
 
-- **Per dataset: `keepOnFailure`**, default `true`, set on `StoreOperation CREATE` and on `StoreWriter createIfMissing`. Setting it to `false` drops a large intermediate dataset even in a failed tree, when keeping it is not worth the space. A dataset that must survive even a successful run uses the `RETAINED` lifetime instead.
-- **Per job: the job config property `datastore.run.keepNamespace`** (`NEVER | ON_FAILURE | ALWAYS`, default `ON_FAILURE`), set on the root job. It is read through the existing per-job configuration (`JobConfigDataSourceFactory`, which already serves the job log level, for example).
-  - `NEVER` drops everything at tree end.
-  - `ALWAYS` is the debugging switch: everything is kept for `datastore.run.retainOnFailure`, whatever the outcome.
+- in the job file's own job config properties
+- in the Server Console, for one job or for a whole sandbox (the `graph_config` table)
+- server-wide, as `executor.datastore_keep_namespace` in the configuration file
+
+Job config keys are a closed enum in the engine (`org.jetel.jobconfig.PropertyKey`), so `datastore_keep_namespace` is added there. Children do not read it: the root's value holds for the tree.
+
+The *Data* tab of a finished run ([§7.13](#713-visibility-in-the-execution-history)) says which value applied. For a run whose data was dropped, it says how to turn the switch on before running the job again.
+
+**Kept data is bounded.** Besides its time limit, all `KEPT` data together has a storage budget, `datastore.run.keptMaxBytes`. When it is exceeded, the oldest kept namespaces are released first. A job that fails every few minutes with the switch on therefore cannot fill the store.
+
+**One finer control remains:**
+
+- **Per dataset: `keepOnFailure`**, default `true`, set on `StoreOperation CREATE` and on `StoreWriter createIfMissing`. It matters only when the switch is `ON_FAILURE` or `ALWAYS`. Setting it to `false` drops a large intermediate dataset even then, when keeping it is not worth the space. A dataset that must survive every run uses the `RETAINED` lifetime instead, which the switch does not affect.
 
 ## 7.8 Concurrency inside a tree
 
