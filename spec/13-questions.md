@@ -11,7 +11,7 @@
 | Q6 | ~~Tree outcome for retention: the root's status or the worst member status?~~ Decided: D21, since replaced by D39. |
 | Q7 | ~~Embedded local store for offline Designer work?~~ Decided: D22. |
 | Q8 | ~~Parameter-to-predicate pushdown in the first replica release?~~ Proposed: no, identity-only matching first ([§8.3](08-replicas.md#83-identity-and-parameters)). |
-| Q9 | ~~Where are replicas defined?~~ Proposed: D9. |
+| Q9 | ~~Where are replicas defined?~~ Proposed: D9, since replaced by D40. |
 | Q10 | ~~Should recipe step prefixes be pushed into SQL for Wrangler step previews?~~ Decided: D27 (no). |
 | Q11 | ~~Are CTL functions over the store wanted?~~ Decided: D28. |
 | Q12 | ~~Should `SCD2` history for incremental replicas ("as of" reads) be in scope at all?~~ Decided: D29 (no SCD2. A change feed instead.) |
@@ -28,6 +28,7 @@
 | Q23 | How are Wrangler sources re-pointed when a library is upgraded and its sandbox code changes (`name_version`)? The answer decides how replica identity follows an upgrade (D38). |
 | Q24 | API tokens for applications: a new store object, or an existing Server mechanism (D34)? |
 | Q25 | Should restarting a failed job let the new tree adopt the kept run namespace of the tree it came from? A restart always starts a new root today, so the restarted job cannot address the old tree's `run.*` data except read-only by name ([§7.3](07-run-namespaces.md#73-dataset-lifetimes-inside-a-run-namespace)). |
+| Q26 | May a replica subgraph write to the store itself, instead of only emitting records for the store to apply (D40)? Emitting keeps validation, atomic swap and snapshots uniform. Writing directly would give the author full freedom and lose those guarantees. |
 
 ---
 

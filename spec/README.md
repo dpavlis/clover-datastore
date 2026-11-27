@@ -1,7 +1,7 @@
 # CloverDX Data Store — Placement, Run Scopes, Replicas and Wrangler Integration
 
 **Status:** Design agreed · 9 November 2026. All 29 decisions in [§12](12-decisions.md#12-decision-register) are agreed with the product owner, and every question raised has a decision ([§13](13-questions.md#13-open-questions)). Ready for the P0 proof of concept.
-**Under review · 27 November 2026.** A design review against the product source ([findings](../review/2026-11-27-design-review.md)) added decisions D30–D38 and open questions Q20–Q25. Issue #1 added D39, which replaces D21. All of D30–D39 are *proposed* and not yet agreed. D30–D33 affect the P0 and P1 design.
+**Under review · 27 November 2026.** A design review against the product source ([findings](../review/2026-11-27-design-review.md)) added decisions D30–D38 and open questions Q20–Q25. Issues #1 and #2 added D39–D41 and Q26; D39 replaces D21 and D40 replaces D9. All of D30–D41 are *proposed* and not yet agreed. D30–D33 affect the P0 and P1 design.
 **Builds on:** *CloverDX Dataset Store — Technical Specification* (8 November 2026), cited throughout as **Base §n**. It is not part of this repository.
 **Nature:** Design specification. Nothing here is implemented. Names, routes and property keys are proposals.
 **Naming:** The Base spec calls the feature *Dataset Store*. It is renamed **Data Store** (D3). Its objects are still called *datasets*.

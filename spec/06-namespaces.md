@@ -100,14 +100,14 @@ erDiagram
     string source_kind "CONNECTOR JOB FILE"
     string source_ref
     string param_hash
-    string refresh_mode "FULL INCREMENTAL"
+    string refresh_job "replica subgraph, optional (D40)"
+    string replica_state "opaque, from the last committed refresh (D40)"
     string freshness_policy
     string retention_policy
   }
   SNAPSHOT {
     long table_id
     timestamp as_of
-    string watermark
     long rows
     string kind "FULL DELTA"
     long batch_no "DELTA only, D29"

@@ -12,7 +12,7 @@
 **Non-goals (this iteration)**
 
 - Federated queries across different physical databases (Base §1).
-- Change data capture (CDC) from sources. Incremental replicas use source-side watermarks only. The replica change feed (D29) is built from those watermark deltas, not from source logs.
+- Change data capture (CDC) from sources. A delta refresh contains whatever the connector's replica subgraph reads from the source (D40). The replica change feed (D29) is built from those deltas, not from source logs.
 - SCD2 history and "as of T" reads for incremental replicas (Q12).
 - Human data stewardship workflows: approval, per-cell audit, staged edits. Those remain the Data Manager's job.
 - A replacement for the Wrangler preview cache for plain file sources. It stays ([§9.8](09-wrangler.md#98-relation-to-the-existing-preview-cache)).

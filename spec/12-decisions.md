@@ -11,7 +11,7 @@
 | D6 | Type model | Scalar CloverDX types from P1, list/map/variant as JSON from P5. Versioned schemas, mapping owned by the storage foundation. | decided |
 | D7 | Designer local runs | As the Data Manager: metadata from the Server at design time for Server projects, data only in Server runs. Run datasets take explicit (shared `.fmt`) metadata. | decided |
 | D8 | Wrangler lookups | Staged file datasets plus `storeLookup` first, SQL join pushdown for lookups later (P5), all behind a parity suite (detailed by D13) | decided |
-| D9 | Replica definitions | Capability in `library.json` (key, watermark, deletes, parameter classes, defaults). Instances in the store catalog. | decided |
+| ~~D9~~ | ~~Replica definitions~~ | ~~Capability in `library.json` (key, watermark, deletes, parameter classes, defaults). Instances in the store catalog.~~ Replaced by D40. | replaced |
 | D10 | Wrangler hook | `SourceReplicaProvider` in `ConversionContext`, resolved on the Server once per conversion, snapshot pinned for the whole run | decided |
 | D11 | Replica content | The connector's native output plus `__src_row`. Wrangler's converter and row filler stay in the graph. | decided |
 | D12 | Replica access | Default `READ` = the connector's execute groups. Wider grants explicit. Connectors using per-user credentials not replicable at first. | decided |
@@ -38,10 +38,12 @@
 | D33 | Publishable tables | A run table created with `publishTo` is built logged, in the target's schema, with the target's indexes, so publish `REPLACE` is a pointer swap on all three databases. Without it, publish copies. Statistics are refreshed after each load and publish. | proposed |
 | D34 | REST for applications | API tokens tied to a user and narrowable to namespaces. Keyset paging with a snapshot token. Small writes with idempotency keys and schema version. Upload sessions as REST build-then-publish. Asynchronous operations, rate limits, one error shape. | proposed |
 | D35 | Applying incremental refreshes (amends D19) | By default the delta is merged into a copy of the current table, which is then swapped in, so pinning, rollback and reproducibility hold. `IN_PLACE` is an option for very large objects and gives them up. | proposed |
-| D36 | Incremental correctness (amends D19) | `asOf` is the start of the last successful refresh in both modes. Each refresh re-reads from the watermark minus the capability's `lookback`. `fullReconcile` is required for incremental replicas. | proposed |
+| D36 | Delta correctness (amends D19) | `asOf` is the start of the last successful refresh for FULL and DELTA alike. `fullReconcile` is required for replicas that take deltas, and `maxGap` forces a FULL. Finding every change, including a safety overlap, is the replica subgraph's job (D40). | proposed |
 | D37 | Substitution (amends D17) | A replica has `substitution`: `OPT_IN` (default) or `ALL_MATCHING`. A `.wsrc` without a `replica` element reads a replica only under `ALL_MATCHING`, which an admin sets after seeing the jobs that will switch. | proposed |
-| D38 | Replica identity (amends D9) | Library name and id without the version. A library configuration change forces a rebuild. Secure parameters as salted hashes. Defined normalisation. `projection` parameters match by containment. Replicas are listed in the Data Catalog. | proposed |
+| D38 | Replica identity (amends D40) | Library name and id without the version. A library configuration change forces a rebuild. Secure parameters as salted hashes. Defined normalisation. `projection` parameters match by containment. Replicas are listed in the Data Catalog. | proposed |
 | D39 | Keeping temporary run data (issue #1, replaces D21) | `TEMPORARY` data is dropped at tree end in every case by default. The job config switch `datastore_keep_namespace` (`NEVER`, `ON_FAILURE`, `ALWAYS`) keeps it for debugging, within a storage budget. The definition of a failed tree is kept from D21. | proposed |
+| D40 | Replica refresh (issue #2, replaces D9) | The capability in `library.json` names a paired replica subgraph written by the connector's author. The store passes it a mode and an opaque state, and applies the FULL or DELTA result it returns. Key and other fields are needed only for merging; change detection is not declared to the store. Without a replica subgraph the connector is run as FULL. Instances stay in the store catalog. | proposed |
+| D41 | Replica management (issue #2) | A Replicas page in the Server Console: every configured replica with last update, time until obsolete, rows and size; actions refresh, purge, pause, roll back, edit, delete. The same through REST. | proposed |
 
 ---
 
