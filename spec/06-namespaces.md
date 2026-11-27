@@ -48,6 +48,8 @@ erDiagram
   DATASET ||--o{ PHYSICAL_TABLE : "points to (current + staged)"
   DATASET ||--o{ ROW_POLICY : "filtered by"
   DATASET ||--o| REPLICA_DEF : "may be"
+  PHYSICAL_TABLE ||--o{ LEASE : "in use by (D32)"
+  NAMESPACE ||--o{ TREE_PIN : "pins for its tree (D32)"
   REPLICA_DEF ||--o{ REFRESH_RUN : "history"
   REPLICA_DEF ||--o{ SNAPSHOT : "retains"
   NAMESPACE {
@@ -59,6 +61,27 @@ erDiagram
     long root_run_id "RUN only"
     string state "ACTIVE DRAINING RELEASING KEPT RETAINED_ONLY RELEASED"
     timestamp release_after
+    string tree_sandbox "RUN only, tree record (D30)"
+    string tree_job_file "RUN only"
+    long tree_user_id "RUN only"
+    timestamp tree_started_at "RUN only"
+    timestamp tree_finished_at "RUN only"
+    string tree_outcome "RUN only: OK FAILED"
+  }
+  LEASE {
+    long dataset_id
+    long table_id
+    string kind "READ APPEND UPSERT BULK_LOAD"
+    long run_id
+    long root_run_id
+    string node_id
+    timestamp issued_at
+    timestamp heartbeat_at
+  }
+  TREE_PIN {
+    long namespace_id
+    long dataset_id
+    long table_id
   }
   DATASET {
     long id
@@ -77,14 +100,14 @@ erDiagram
     string source_kind "CONNECTOR JOB FILE"
     string source_ref
     string param_hash
-    string refresh_mode "FULL INCREMENTAL"
+    string refresh_job "replica subgraph, optional (D40)"
+    string replica_state "opaque, from the last committed refresh (D40)"
     string freshness_policy
     string retention_policy
   }
   SNAPSHOT {
     long table_id
     timestamp as_of
-    string watermark
     long rows
     string kind "FULL DELTA"
     long batch_no "DELTA only, D29"
@@ -97,7 +120,15 @@ A dataset points to a **current physical table**. All atomic operations work by 
 - full replica refresh
 - schema migrations that need a rewrite
 
-Readers resolve the pointer once per statement, so they always see one consistent version.
+**Pin scope (D32, proposed).** How long a reader keeps one version depends on the caller:
+
+| Caller | The pointer is resolved | Held until |
+|---|---|---|
+| A job in a tree | Once per **tree**, at the first read of the dataset by any member. The pin is stored with the tree's namespace record, which is created for this purpose even if the tree never writes `run.*`. | The tree is released |
+| REST or MCP | Once per request. A paged read returns a snapshot token with the first page, and later pages present it ([§10.1](10-components-and-apis.md#101-rest-for-applications-d34)). | The token expires |
+| A statement outside any tree | Once per statement | The statement ends |
+
+Two children of one jobflow therefore read the same version of a dataset, even if a publish or a refresh happens between them. A member that wants the newest version asks for it explicitly (`StoreReader` attribute `repin`).
 
 ---
 

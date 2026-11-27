@@ -5,11 +5,11 @@
 
 - R1. A top-level job and all its descendants (ExecuteGraph, ExecuteJobflow, subgraphs, Wrangler jobs) share one namespace, isolated from every other run.
 - R2. Jobs in the tree can create, alter, write, read and drop datasets in it, and can also work with shared namespaces under normal ACL.
-- R3. Temporary datasets disappear when the tree finishes, including after a crash.
+- R3. Temporary datasets disappear when the tree finishes, including after a crash. This is the default in every case. A switch can keep them for debugging (D39).
 - R4. Results built in the run can be made visible to others atomically.
 - R5. It works when children run on other cluster nodes or in worker JVMs.
 - R6. A run that never uses the store pays nothing.
-- R7. After a failure, the data can be inspected long enough to debug it.
+- R7. When the keep switch is set, the data of a failed or crashed tree can be inspected long enough to debug it.
 
 ## 7.2 Membership and identity
 
@@ -32,7 +32,8 @@ Which start paths join which tree:
 | Subgraph component | The parent's run | |
 | Partitioned cluster graph (worker partitions on several nodes) | The master's tree | |
 | Data service request (Data App, `RESTJOB`) | **None**: `run.*` is refused in the whole tree | [§7.10](#710-data-service-requests-q19) |
-| Hidden execution (`persistentRunRecord = false`: Wrangler previews, profiler) | The caller's tree when started from a run. Otherwise `run.*` is refused. | It has no run record in the DB, so the sweeper cannot see it. This is acceptable because such runs are synchronous children (`executeGraphSync`), so their parent always outlives them. Wrangler staging uses the `staged` namespace, never `run`. |
+| A root without a run record (`persistentRunRecord = false`): a schedule or task with `saveRunRecord=false`, a Wrangler preview, a view-data run | **None**: `run.*` is refused in the whole tree (D30) | Such a run has a negative id from an in-memory sequence, which is not unique over time or across nodes, and the sweeper cannot see it. Children inherit the flag. The error names the `saveRunRecord` setting. Wrangler staging uses the `staged` namespace, never `run`. |
+| A child without a run record whose root has one (the profiler's `executeGraphSync`) | The root's tree | It is a synchronous child, so a member with a run record always outlives it. |
 | A job started *because of* another tree: a jobflow or file event listener, or an HTTP call made by a job | **Its own tree**. It is not a member. | Sharing data with it is covered in [§7.9](#79-sharing-with-jobs-outside-the-tree-q5). |
 
 **Resolution in the core.** Every store call arrives through `ServerAuthorityProxy`:
@@ -42,20 +43,34 @@ Which start paths join which tree:
 
 The root is read from that environment, with no DB lookup per call. The caller never names its namespace, which guarantees isolation: a job cannot reach into another tree's namespace by guessing its id.
 
-**Lazy creation (R6).** The namespace row is created on the first `run.*` reference, by a conditional insert on the unique root id. Concurrent first calls from parallel children are safe. A tree that never says `run.` costs nothing.
+**Lazy creation (R6).** The namespace row is created on the first `run.*` reference, by a conditional insert on the unique root id. Concurrent first calls from parallel children are safe. A tree that never says `run.` costs nothing. A tree that only reads shared datasets gets the row too, to hold its pins ([§6.2](06-namespaces.md#62-catalog-model)), but no tables.
+
+**D30 (proposed). The store keeps its own record of the tree.** The execution history cannot be relied on after the run:
+
+- The archivator deletes run records older than its limit (30 days by default), one node at a time and with no regard for trees. A root's record can go while a daemon child still runs.
+- Deleting a sandbox, or importing a server configuration, deletes that sandbox's run records.
+
+So the namespace row carries a **tree record**, written at creation and completed at release:
+
+- root run id, sandbox, job file and executing user
+- start time, end time and outcome ([§7.7](#77-tree-outcome-and-keeping-data-for-debugging-q6))
+
+Retention, access after the run ([§7.3](#73-dataset-lifetimes-inside-a-run-namespace)) and the *Data* tab ([§7.13](#713-visibility-in-the-execution-history)) read the tree record, never the run record. Only the question "is a member still running?" uses run records, because a running member always has one (D30 refuses `run.*` to roots without a record).
 
 ## 7.3 Dataset lifetimes inside a run namespace
 
 | Lifetime | Behaviour at tree end | Use |
 |---|---|---|
-| `TEMPORARY` (default in `run`) | Dropped, subject to the tree outcome rule ([§7.7](#77-tree-outcome-and-keeping-data-for-debugging-q6)) | Staging, intermediate results, lookups |
+| `TEMPORARY` (default in `run`) | Dropped, whatever the outcome. The keep switch ([§7.7](#77-tree-outcome-and-keeping-data-for-debugging-q6)) can hold it for debugging. | Staging, intermediate results, lookups |
 | `RETAINED` | Kept, read-only, for a retention period (per dataset, default `datastore.run.retainedDefault`) | Run outputs worth inspecting, audit evidence |
 | `PUBLISHED` (an action, not a state) | The physical table is moved into a shared dataset ([§7.4](#74-publish-build-in-isolation-swap-atomically)). Nothing is left in the run namespace. | Build-then-swap |
 
 **After the run**, a retained or kept dataset is addressable read-only as `run_<rootRunId>.x` by:
 
-- users who may see that root run in the execution history (the same permission as its log and tracking)
+- users who could see that root run in the execution history: read permission on the sandbox named in the tree record (D30), or `run_record_list_unlimited`. This is checked against the tree record, so it still works after the run record is purged.
 - holders of `data_store_admin`
+
+If the sandbox has been deleted, only `data_store_admin` holders can read the data.
 
 An admin can also **publish a retained dataset after the run**, for example to promote the output of a run that failed only at its final step.
 
@@ -83,7 +98,7 @@ sequenceDiagram
   JF->>AP: StoreOperation PUBLISH run.customers_new → crm.customers (mode REPLACE)
   AP->>LC: check MANAGE on crm, schema compatible with crm.customers
   LC->>DB: BEGIN, crm.customers.current_table := DS_005512, old table → RETIRED, COMMIT
-  Note over LC,DB: readers holding the old pointer finish on the old table, RETIRED tables are dropped by maintenance after a grace period
+  Note over LC,DB: readers holding the old pointer finish on the old table, a RETIRED table is dropped by maintenance once no lease or tree pin refers to it (D32)
 ```
 
 Publish modes:
@@ -92,7 +107,26 @@ Publish modes:
 - `APPEND`: `INSERT … SELECT` inside the DB
 - `MERGE`: upsert by key, inside the DB
 
-`REPLACE` is the only one that is O(1) and atomic on every dialect.
+`REPLACE` is atomic on every dialect. It is O(1) only when the table was built to be published.
+
+**D33 (proposed). Publishable tables.** A table created as an ordinary `TEMPORARY` run table cannot always be published by moving a pointer:
+
+- On PostgreSQL it is `UNLOGGED` ([§7.11](#711-physical-storage)). Making it permanent needs `ALTER TABLE … SET LOGGED`, which rewrites the table and writes all of it to the WAL.
+- With `datastore.run.schema` set, it sits in the run schema. Oracle cannot move a table to another schema without copying it.
+
+So `StoreOperation CREATE` and `StoreWriter createIfMissing` take `publishTo=<ns.dataset>`:
+
+| Aspect | A table created with `publishTo` |
+|---|---|
+| Physical placement | Created logged, in the target namespace's schema, with the `DS_` prefix |
+| Structure | Created with the target's schema, key and indexes, so the swap needs no rebuild. Indexes may be built after the load, before publish. |
+| Permission | Creating it requires `MANAGE` on the target namespace, the same as publishing |
+| Catalog | Listed in the run namespace as `run.x` until it is published or the tree ends. If the tree ends first, it is dropped or kept like any `TEMPORARY` dataset. |
+| Publish `REPLACE` | A pointer swap: O(1) on all three dialects |
+
+Publishing a table created **without** `publishTo` still works. The store then copies it (`INSERT … SELECT` into a new table in the target's schema) and swaps. The job log says that a copy was made and names `publishTo` as the way to avoid it.
+
+After any publish or bulk load the store refreshes optimizer statistics on the new table (`ANALYZE` or the dialect's equivalent), so that queries on it get a sound plan at once.
 
 ## 7.5 Namespace lifecycle
 
@@ -103,7 +137,7 @@ stateDiagram-v2
   [*] --> ACTIVE: first run.* call in the tree
   ACTIVE --> DRAINING: root run final
   DRAINING --> RELEASING: no member run left that is not final
-  RELEASING --> KEPT: outcome rule keeps data (failure or debug switch)
+  RELEASING --> KEPT: keep switch set and it applies (D39)
   RELEASING --> RETAINED_ONLY: TEMPORARY dropped, RETAINED kept
   RELEASING --> RELEASED: nothing kept
   KEPT --> RETAINED_ONLY: keep period over, TEMPORARY dropped
@@ -127,23 +161,44 @@ The platform has no "tree finished" signal, and daemon children can outlive the 
    - cluster failover
    - runs moved to `UNKNOWN` by `solveUnresolvedGraphs` after a crash
 3. **Cluster safety.** State changes are conditional updates (`… SET state='RELEASING' WHERE id=? AND state='DRAINING'`). Only the node whose update wins drops the tables, so no cluster lock is needed.
-4. **Orphans.** If a namespace's root run record is gone (run history purged), the sweeper releases it. This mirrors temp-space `sanitizationCleanup`.
+4. **Orphans (D30).** A missing root run record alone never releases a namespace. The rule depends on the state:
+   - `ACTIVE` or `DRAINING`: if the root's run record is gone, the sweeper treats the root as final and runs the member check of step 1. The namespace moves to `RELEASING` only when no member run is running **and** the lease registry (D32) shows no lease for the tree. The outcome is then recorded as `FAILED`, because it can no longer be computed.
+   - `KEPT` or `RETAINED_ONLY`: the purge of run records has no effect. These states end by their own timers (`release_after`), using the tree record.
 5. **A daemon child that never ends** keeps its namespace in `DRAINING`. Tables are never dropped under a running member. Instead:
    - after `datastore.run.drainWarnAfter`, the namespace is reported in the admin UI and the log
    - an admin can abort the daemon, or release the namespace by force; the daemon's next store call then fails with "run namespace released"
 
 ## 7.7 Tree outcome and keeping data for debugging (Q6)
 
-**D21 (Q6). The tree counts as failed if *any* member run ended `ERROR`, `ABORTED`, `TIMEOUT` or `UNKNOWN`**, even when the root handled the failure and finished `FINISHED_OK`. A failed tree keeps its `TEMPORARY` data for `datastore.run.retainOnFailure` (state `KEPT`), so failures the root handled stay debuggable with their data. A tree with no failed member drops it at once.
+**D39 (proposed, [issue #1](https://github.com/dpavlis/clover-datastore/issues/1); replaces D21). Temporary data is always cleaned up, unless a switch says to keep it.** By default a tree's `TEMPORARY` datasets are dropped when the tree finishes, whether it succeeded, failed, was aborted or crashed. Keeping them for debugging is something a developer or an administrator turns on.
+
+**The switch** is the job config property `datastore_keep_namespace`:
+
+| Value | At tree end |
+|---|---|
+| `NEVER` (default) | Everything `TEMPORARY` is dropped at once |
+| `ON_FAILURE` | A failed tree keeps its `TEMPORARY` data for `datastore.run.retainOnFailure` (state `KEPT`). A successful tree drops it at once. |
+| `ALWAYS` | Every tree keeps it for `datastore.run.retainOnFailure`, whatever the outcome |
+
+**When a tree counts as failed** (kept from D21). If *any* member run ended `ERROR`, `ABORTED`, `TIMEOUT` or `UNKNOWN`, even when the root handled the failure and finished `FINISHED_OK`. A crash is covered: the runs of a crashed node are set to `UNKNOWN` when the node restarts or is declared dead, and the sweeper then applies the switch ([§7.6](#76-detecting-that-a-tree-has-finished)).
 
 The outcome is computed at `RELEASING` from the members' run records (the same `root_run_id` query as [§7.6](#76-detecting-that-a-tree-has-finished)), so no member needs to report anything.
 
-Two switches adjust that rule:
+**Where the switch is set.** It is read once, for the root job, through the existing job configuration (`GraphConfigManager.getPropertyValue`), so it can be set at any of the usual levels:
 
-- **Per dataset: `keepOnFailure`**, default `true`, set on `StoreOperation CREATE` and on `StoreWriter createIfMissing`. Setting it to `false` drops a large intermediate dataset even in a failed tree, when keeping it is not worth the space. A dataset that must survive even a successful run uses the `RETAINED` lifetime instead.
-- **Per job: the job config property `datastore.run.keepNamespace`** (`NEVER | ON_FAILURE | ALWAYS`, default `ON_FAILURE`), set on the root job. It is read through the existing per-job configuration (`JobConfigDataSourceFactory`, which already serves the job log level, for example).
-  - `NEVER` drops everything at tree end.
-  - `ALWAYS` is the debugging switch: everything is kept for `datastore.run.retainOnFailure`, whatever the outcome.
+- in the job file's own job config properties
+- in the Server Console, for one job or for a whole sandbox (the `graph_config` table)
+- server-wide, as `executor.datastore_keep_namespace` in the configuration file
+
+Job config keys are a closed enum in the engine (`org.jetel.jobconfig.PropertyKey`), so `datastore_keep_namespace` is added there. Children do not read it: the root's value holds for the tree.
+
+The *Data* tab of a finished run ([§7.13](#713-visibility-in-the-execution-history)) says which value applied. For a run whose data was dropped, it says how to turn the switch on before running the job again.
+
+**Kept data is bounded.** Besides its time limit, all `KEPT` data together has a storage budget, `datastore.run.keptMaxBytes`. When it is exceeded, the oldest kept namespaces are released first. A job that fails every few minutes with the switch on therefore cannot fill the store.
+
+**One finer control remains:**
+
+- **Per dataset: `keepOnFailure`**, default `true`, set on `StoreOperation CREATE` and on `StoreWriter createIfMissing`. It matters only when the switch is `ON_FAILURE` or `ALWAYS`. Setting it to `false` drops a large intermediate dataset even then, when keeping it is not worth the space. A dataset that must survive every run uses the `RETAINED` lifetime instead, which the switch does not affect.
 
 ## 7.8 Concurrency inside a tree
 
@@ -153,8 +208,8 @@ Parallel children often write the same dataset.
 |---|---|
 | Create | `CREATE IF NOT EXISTS` with a schema equality check. Two children creating the same dataset with the same schema both succeed. Different schemas fail. |
 | Append | Concurrent appends allowed, in separate transactions |
-| Replace or truncate | Takes a dataset write lock (catalog row lock). Concurrent appends wait or fail per `lockTimeout`, reusing the DM's `SchemaHandler` lock-timeout support. |
-| Schema change | Exclusive lock. Bumps the version. Writers holding an older version fail fast. |
+| Replace or truncate | Done by the core, through the lease registry (D32, [§5.3](05-architecture.md#53-data-plane-how-records-travel)). The core marks the dataset as *changing*, which stops new leases, then waits for the write leases on it to finish, or fails per `lockTimeout`. A leased writer cannot take a catalog lock itself, because the worker account has no rights on the catalog. |
+| Schema change | The same protocol, waiting for read leases too. It bumps the version. A lease request that states an older version is refused. A writer never holds a stale lease across the change, because the change waits for it. |
 | Read-your-writes | A writer's commit (per batch or at component end, configurable like `DBOutputTable`'s commit) makes rows visible to siblings |
 
 ## 7.9 Sharing with jobs outside the tree (Q5)
@@ -190,7 +245,7 @@ Ordinary quotas apply to both. This keeps the load a busy Data App puts on the s
 
 ## 7.11 Physical storage
 
-Run tables use their own name prefix (`DSR_`) and, where configured, a separate DB schema. Maintenance and space accounting can then treat them apart from shared data.
+Run tables use their own name prefix (`DSR_`) and, where configured, a separate DB schema. Maintenance and space accounting can then treat them apart from shared data. The exception is a table created with `publishTo` (D33): it is built where it will be published, and is accounted to the run namespace through the catalog until then.
 
 | Dialect | `TEMPORARY` tables | Drop |
 |---|---|---|
@@ -204,7 +259,7 @@ Per run namespace: maximum datasets, rows and bytes (`datastore.run.defaultQuota
 
 ## 7.13 Visibility in the execution history
 
-The execution detail of a root run (`ExecutionTreeController`, the execution tree view) gets a **Data** tab:
+The execution detail of a root run gets a **Data** tab. The detail tabs are defined in `executions_right.xml` and owned by `ExecutionsController`; the tab embeds a web component, as the Job Inspector tab does. It shows:
 
 - namespace state and the datasets in it
 - each dataset's lifetime, rows, size and the member run that created it

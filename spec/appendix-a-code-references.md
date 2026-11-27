@@ -30,7 +30,7 @@
 | Root run id on each start path | `S/graph/runtime/ServerAuthorityProxy.java` (`prepareExecutionCommand`, `prepareWranglerExecutionCommand`), `S/job/cluster/MasterStartingStrategy.java`, `S/job/wrangler/WranglerJobStartingStrategy.java`, `S/graph/RunRecordHelper.java`, `S/graph/ExecutionHelper.java` (`ROOT_RUN_ID` parameter) |
 | Final run states | `E/graph/Result.java` (`isStop()`) |
 | Data service trees | `S/job/queue/JobQueue.java` (`isChildOfDataService`) |
-| Per-job configuration | `S/graph/runtime/JobConfigDataSourceFactory.java` |
+| Per-job configuration | `S/graph/runtime/GraphConfigManager.java` (`getPropertyValue`), `cloveretl.engine/src/org/jetel/jobconfig/PropertyKey.java`, `S/persistent/JobConfig.java` (table `graph_config`) |
 | Execution tree view | `S/web/gui/ExecutionTreeController.java` |
 | Worker datasources and classpath | `cloveretl.server/web/WEB-INF/config.properties` (`worker.classpath`, `worker.jndi.datasource[n].*`) |
 | Local runs | `cloveretl.gui/src/com/cloveretl/gui/utils/GuiAuthorityProxy.java`, `E/graph/runtime/PrimitiveAuthorityProxy.java` |
