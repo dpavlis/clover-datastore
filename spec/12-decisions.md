@@ -39,6 +39,7 @@
 | D34 | REST for applications | API tokens tied to a user and narrowable to namespaces. Keyset paging with a snapshot token. Small writes with idempotency keys and schema version. Upload sessions as REST build-then-publish. Asynchronous operations, rate limits, one error shape. | proposed |
 | D35 | Applying incremental refreshes (amends D19) | By default the delta is merged into a copy of the current table, which is then swapped in, so pinning, rollback and reproducibility hold. `IN_PLACE` is an option for very large objects and gives them up. | proposed |
 | D36 | Incremental correctness (amends D19) | `asOf` is the start of the last successful refresh in both modes. Each refresh re-reads from the watermark minus the capability's `lookback`. `fullReconcile` is required for incremental replicas. | proposed |
+| D37 | Substitution (amends D17) | A replica has `substitution`: `OPT_IN` (default) or `ALL_MATCHING`. A `.wsrc` without a `replica` element reads a replica only under `ALL_MATCHING`, which an admin sets after seeing the jobs that will switch. | proposed |
 
 ---
 

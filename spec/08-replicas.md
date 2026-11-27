@@ -61,6 +61,7 @@ refresh:
 freshness: { target: PT24H, hardExpiry: P7D, onStale: USE_WITH_WARNING }
 retention: { snapshots: 3, maxSnapshotAge: P30D, dropIfUnusedFor: P90D }
 validation: { maxShrink: 20% }        # refuse a FULL swap that loses more than 20 % of rows
+substitution: OPT_IN                  # OPT_IN | ALL_MATCHING: which Wrangler sources read it (D37)
 ```
 
 The two layers combine as follows:

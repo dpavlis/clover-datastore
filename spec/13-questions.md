@@ -24,6 +24,7 @@
 | Q19 | ~~Data service requests using `run.*`?~~ Decided: D23. |
 | Q20 | Default of `datastore.lease.mode`: `ALL` (as D4 has it), or `SYSTEM_JOBS`, so that object ACL is a hard boundary unless a deployment opts out? The P0 throughput comparison of leased and proxied loads should inform this ([§5.3](05-architecture.md#53-data-plane-how-records-travel), D31). |
 | Q21 | Above what table size should an admin choose `IN_PLACE` for an incremental replica, given the cost of one in-database copy per refresh on each of the three databases? To be measured in P3 (D35). |
+| Q22 | Is `OPT_IN` the right default for `substitution`, or should a new replica apply to all matching sources once the admin has seen the impact list (D37)? |
 | Q24 | API tokens for applications: a new store object, or an existing Server mechanism (D34)? |
 | Q25 | Should restarting a failed job let the new tree adopt the kept run namespace of the tree it came from? A restart always starts a new root today, so the restarted job cannot address the old tree's `run.*` data except read-only by name ([§7.3](07-run-namespaces.md#73-dataset-lifetimes-inside-a-run-namespace)). |
 

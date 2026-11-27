@@ -44,7 +44,7 @@ flowchart TD
   P -- no --> L["SUBGRAPH (live): today"]
   P -- yes --> B{"Replicable connector and<br/>instance for identity hash?"}
   B -- no --> L
-  B -- yes --> C{".wsrc replica mode"}
+  B -- yes --> C{".wsrc replica mode<br/>(none: OFF if replica is OPT_IN,<br/>PREFER if ALL_MATCHING, D37)"}
   C -- OFF --> L
   C -- "PREFER / REQUIRE" --> S{"Replica state"}
   S -- "REQUESTED, EMPTY, DORMANT or INCOMPATIBLE" --> M{"mode"}
@@ -64,13 +64,28 @@ flowchart TD
 
 ## 9.3 Behaviour per usage
 
-The `.wsrc` gains an optional `replica` element: `mode` (`OFF | PREFER | REQUIRE`, default `PREFER`), `maxStaleness` and `onStale`. A file without it behaves as `PREFER` with the replica's defaults. That is exactly today's behaviour wherever no replica exists.
+The `.wsrc` gains an optional `replica` element: `mode` (`OFF | PREFER | REQUIRE`), `maxStaleness` and `onStale`.
+
+**D37 (proposed). A source without a `replica` element is switched to a replica only if the replica says so.** Creating or approving a replica must not change, unannounced, what existing jobs read. A scheduled job that today reads Salesforce live would otherwise start reading data up to `freshnessTarget` old, with a log line as the only sign. A job that writes to the source and reads it back would break.
+
+The replica instance therefore has `substitution` ([§8.2](08-replicas.md#82-two-layers-connector-capability-and-replica-instance)):
+
+| `substitution` | A `.wsrc` **without** a `replica` element | A `.wsrc` **with** one |
+|---|---|---|
+| `OPT_IN` (default) | Reads live, as today | Follows its `mode` |
+| `ALL_MATCHING` | Behaves as `PREFER` with the replica's defaults | Follows its `mode` |
+
+- **Opting in is one click.** The Wrangler source header offers "Use the replica" for a source that matches one, and writes `mode: PREFER`. A source created from a replica's entry in the Data Catalog ([§9.2](#92-hook-point-sourcereplicaprovider)) has it from the start. The user who requested the replica (D16) gets it on the requesting source when the request is approved.
+- **`ALL_MATCHING` is an informed choice.** Before an admin sets it, at approval or later, the admin UI lists the matching sources and the jobs that use them, with the scheduled ones marked. The list comes from resolving the workspaces' `.wsrc` files against the replica's identity.
+- **Every run says what it read.** Tracking and the run summary show each source as *live* or *replica as of …* ([§9.2](#92-hook-point-sourcereplicaprovider)).
+
+Wherever no replica exists, and wherever one exists with `OPT_IN`, a file without the element behaves exactly as today.
 
 | Usage | Default `onStale` | Reason |
 |---|---|---|
 | Source preview, step preview, lookup in a preview | `USE_WITH_WARNING` (never wait, never go live) | Waiting or going live is the slowness replicas remove. The badge offers "Refresh now". |
 | Full run started from the Wrangler UI | Replica default (`USE_WITH_WARNING` unless set) | The user is watching and sees the warning |
-| Unattended run (schedule, ExecuteWranglerJob, WranglerJob component) | `USE_WITH_WARNING` unless the replica or the `.wsrc` says otherwise (D17) | It never blocks or spends API quota during the day. A job that needs fresh data sets `REFRESH_AND_WAIT` or `FAIL` explicitly, and the warning with `asOf` is in its log and tracking. |
+| Unattended run (a scheduled graph or jobflow with ExecuteWranglerJob, or the WranglerJob component) of a source that reads the replica under D37 | `USE_WITH_WARNING` unless the replica or the `.wsrc` says otherwise (D17) | It never blocks or spends API quota during the day. A job that needs fresh data sets `REFRESH_AND_WAIT` or `FAIL` explicitly, and the warning with `asOf` is in its log and tracking. |
 | `REQUIRE` with an `EMPTY` replica | Error | For sources whose live API must not be called during the day |
 
 ## 9.4 Previews and browsing

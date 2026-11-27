@@ -50,6 +50,7 @@ Exit criteria per phase:
   - The Wrangler lookup parity suite ([§9.5](09-wrangler.md#95-lookups)) passes.
   - An Excel lookup over 1M rows runs in bounded heap.
   - A recipe over a Salesforce replica produces output identical to the same recipe read live from the same data.
+  - Approving a replica with `substitution: OPT_IN` changes the output of no existing job. With `ALL_MATCHING`, the admin UI lists the jobs that switch before the setting is saved (D37).
 
 ---
 
