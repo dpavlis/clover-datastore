@@ -32,6 +32,7 @@
 | D27 | Wrangler step pushdown (Q10) | None. Step previews always run the recipe graph. | decided |
 | D28 | CTL functions (Q11) | Read-only metadata functions: `storeExists`, `storeRowCount`, `storeAsOf`, `storeState`. No data or SQL from CTL. | decided |
 | D29 | Incremental replica history (Q12) | No SCD2 or as-of reads. Delta batches kept from P3 under snapshot retention. A "changes since batch N" feed in P5, failing loudly when batches are gone. | decided |
+| D30 | Tree record | The run namespace row carries the store's own record of the tree (root, sandbox, job, user, times, outcome). Retention and access after the run use it, not the run record. `run.*` is refused when the root has no run record. A purged root record alone never releases a namespace. | proposed |
 | D31 | Worker pool (amends D4) | The store's worker pool is private to the lease executor and not bound in JNDI. With leases on, object ACL is advisory against user Java code in the worker; row policy stays a hard boundary. The default of `datastore.lease.mode` is open (Q20). | proposed |
 | D32 | Lease registry and pin scope | Issued leases are recorded in the catalog with a heartbeat. Replace, truncate, alter and drop coordinate through it; a table with a lease or a pin is never dropped. A job tree pins a dataset version once for all its members; REST pins per request with a snapshot token. | proposed |
 

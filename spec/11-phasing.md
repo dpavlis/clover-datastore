@@ -31,6 +31,8 @@ Exit criteria per phase:
   - A child failure that the root handles keeps the tree's data for `retainOnFailure`.
   - `run.*` in a data service tree is refused with the alternatives named.
   - A scratch namespace is dropped when its TTL expires.
+  - `run.*` in a tree whose root has no run record is refused, naming `saveRunRecord` (D30).
+  - Purging the execution history does not drop a `RETAINED` dataset before its retention ends, and does not release a namespace while a daemon member runs (D30).
 - **P3**:
   - A failed refresh never changes what readers see. Snapshot rollback works.
   - A FULL refresh that returns more than `maxShrink` fewer rows is refused.

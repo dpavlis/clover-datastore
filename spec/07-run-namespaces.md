@@ -32,7 +32,8 @@ Which start paths join which tree:
 | Subgraph component | The parent's run | |
 | Partitioned cluster graph (worker partitions on several nodes) | The master's tree | |
 | Data service request (Data App, `RESTJOB`) | **None**: `run.*` is refused in the whole tree | [§7.10](#710-data-service-requests-q19) |
-| Hidden execution (`persistentRunRecord = false`: Wrangler previews, profiler) | The caller's tree when started from a run. Otherwise `run.*` is refused. | It has no run record in the DB, so the sweeper cannot see it. This is acceptable because such runs are synchronous children (`executeGraphSync`), so their parent always outlives them. Wrangler staging uses the `staged` namespace, never `run`. |
+| A root without a run record (`persistentRunRecord = false`): a schedule or task with `saveRunRecord=false`, a Wrangler preview, a view-data run | **None**: `run.*` is refused in the whole tree (D30) | Such a run has a negative id from an in-memory sequence, which is not unique over time or across nodes, and the sweeper cannot see it. Children inherit the flag. The error names the `saveRunRecord` setting. Wrangler staging uses the `staged` namespace, never `run`. |
+| A child without a run record whose root has one (the profiler's `executeGraphSync`) | The root's tree | It is a synchronous child, so a member with a run record always outlives it. |
 | A job started *because of* another tree: a jobflow or file event listener, or an HTTP call made by a job | **Its own tree**. It is not a member. | Sharing data with it is covered in [§7.9](#79-sharing-with-jobs-outside-the-tree-q5). |
 
 **Resolution in the core.** Every store call arrives through `ServerAuthorityProxy`:
@@ -42,7 +43,19 @@ Which start paths join which tree:
 
 The root is read from that environment, with no DB lookup per call. The caller never names its namespace, which guarantees isolation: a job cannot reach into another tree's namespace by guessing its id.
 
-**Lazy creation (R6).** The namespace row is created on the first `run.*` reference, by a conditional insert on the unique root id. Concurrent first calls from parallel children are safe. A tree that never says `run.` costs nothing.
+**Lazy creation (R6).** The namespace row is created on the first `run.*` reference, by a conditional insert on the unique root id. Concurrent first calls from parallel children are safe. A tree that never says `run.` costs nothing. A tree that only reads shared datasets gets the row too, to hold its pins ([§6.2](06-namespaces.md#62-catalog-model)), but no tables.
+
+**D30 (proposed). The store keeps its own record of the tree.** The execution history cannot be relied on after the run:
+
+- The archivator deletes run records older than its limit (30 days by default), one node at a time and with no regard for trees. A root's record can go while a daemon child still runs.
+- Deleting a sandbox, or importing a server configuration, deletes that sandbox's run records.
+
+So the namespace row carries a **tree record**, written at creation and completed at release:
+
+- root run id, sandbox, job file and executing user
+- start time, end time and outcome ([§7.7](#77-tree-outcome-and-keeping-data-for-debugging-q6))
+
+Retention, access after the run ([§7.3](#73-dataset-lifetimes-inside-a-run-namespace)) and the *Data* tab ([§7.13](#713-visibility-in-the-execution-history)) read the tree record, never the run record. Only the question "is a member still running?" uses run records, because a running member always has one (D30 refuses `run.*` to roots without a record).
 
 ## 7.3 Dataset lifetimes inside a run namespace
 
@@ -54,8 +67,10 @@ The root is read from that environment, with no DB lookup per call. The caller n
 
 **After the run**, a retained or kept dataset is addressable read-only as `run_<rootRunId>.x` by:
 
-- users who may see that root run in the execution history (the same permission as its log and tracking)
+- users who could see that root run in the execution history: read permission on the sandbox named in the tree record (D30), or `run_record_list_unlimited`. This is checked against the tree record, so it still works after the run record is purged.
 - holders of `data_store_admin`
+
+If the sandbox has been deleted, only `data_store_admin` holders can read the data.
 
 An admin can also **publish a retained dataset after the run**, for example to promote the output of a run that failed only at its final step.
 
@@ -127,7 +142,9 @@ The platform has no "tree finished" signal, and daemon children can outlive the 
    - cluster failover
    - runs moved to `UNKNOWN` by `solveUnresolvedGraphs` after a crash
 3. **Cluster safety.** State changes are conditional updates (`… SET state='RELEASING' WHERE id=? AND state='DRAINING'`). Only the node whose update wins drops the tables, so no cluster lock is needed.
-4. **Orphans.** If a namespace's root run record is gone (run history purged), the sweeper releases it. This mirrors temp-space `sanitizationCleanup`.
+4. **Orphans (D30).** A missing root run record alone never releases a namespace. The rule depends on the state:
+   - `ACTIVE` or `DRAINING`: if the root's run record is gone, the sweeper treats the root as final and runs the member check of step 1. The namespace moves to `RELEASING` only when no member run is running **and** the lease registry (D32) shows no lease for the tree. The outcome is then recorded as `FAILED`, because it can no longer be computed.
+   - `KEPT` or `RETAINED_ONLY`: the purge of run records has no effect. These states end by their own timers (`release_after`), using the tree record.
 5. **A daemon child that never ends** keeps its namespace in `DRAINING`. Tables are never dropped under a running member. Instead:
    - after `datastore.run.drainWarnAfter`, the namespace is reported in the admin UI and the log
    - an admin can abort the daemon, or release the namespace by force; the daemon's next store call then fails with "run namespace released"
@@ -204,7 +221,7 @@ Per run namespace: maximum datasets, rows and bytes (`datastore.run.defaultQuota
 
 ## 7.13 Visibility in the execution history
 
-The execution detail of a root run (`ExecutionTreeController`, the execution tree view) gets a **Data** tab:
+The execution detail of a root run gets a **Data** tab. The detail tabs are defined in `executions_right.xml` and owned by `ExecutionsController`; the tab embeds a web component, as the Job Inspector tab does. It shows:
 
 - namespace state and the datasets in it
 - each dataset's lifetime, rows, size and the member run that created it

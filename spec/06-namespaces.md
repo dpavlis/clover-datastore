@@ -61,6 +61,12 @@ erDiagram
     long root_run_id "RUN only"
     string state "ACTIVE DRAINING RELEASING KEPT RETAINED_ONLY RELEASED"
     timestamp release_after
+    string tree_sandbox "RUN only, tree record (D30)"
+    string tree_job_file "RUN only"
+    long tree_user_id "RUN only"
+    timestamp tree_started_at "RUN only"
+    timestamp tree_finished_at "RUN only"
+    string tree_outcome "RUN only: OK FAILED"
   }
   LEASE {
     long dataset_id
