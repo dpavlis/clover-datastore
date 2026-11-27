@@ -28,6 +28,8 @@ Only the connector's author knows which parameter carries a "modified since" val
     "incremental": {
       "watermarkField": "SystemModstamp",
       "watermarkParameter": "MODIFIED_SINCE",
+      "watermarkComparison": "GREATER_OR_EQUAL",
+      "lookback": "PT15M",
       "deletes": { "mode": "TOMBSTONE", "flagField": "IsDeleted", "maxGap": "P14D" }
     },
     "parameters": {
@@ -50,8 +52,9 @@ source: { kind: CONNECTOR, library: salesforce, connector: graph/subgraph/Salesf
           parameters: { OBJECT: Account, FIELDS: "Id,Name,Industry,OwnerId,SystemModstamp,IsDeleted" } }
 refresh:
   mode: INCREMENTAL                   # FULL | INCREMENTAL (INCREMENTAL needs the capability)
+  apply: COPY_AND_SWAP                # COPY_AND_SWAP | IN_PLACE, INCREMENTAL only (D35)
   schedule: "0 0 1 * * ?"             # from capability defaults unless overridden
-  fullReconcile: "0 0 2 * * SUN"
+  fullReconcile: "0 0 2 * * SUN"      # required when mode is INCREMENTAL (D36)
   window: { notBefore: "22:00", notAfter: "05:00" }
   principal: svc_salesforce
   minOnDemandInterval: PT1H           # rate limit for "Refresh now"
@@ -101,13 +104,37 @@ A failed run or a failed validation leaves the previous snapshot current and set
 
 **INCREMENTAL (watermark merge)**
 
-1. Read the stored watermark: the maximum `watermarkField` of the last successful refresh.
-2. Run the wrapper graph with `watermarkParameter` set to that watermark, into a staged delta table.
-3. `MERGE` the delta into the current table by key, in one transaction:
+1. Read the stored watermark: the maximum `watermarkField` over all rows loaded so far.
+2. Run the wrapper graph with `watermarkParameter` set to **the watermark minus `lookback`**, into a staged delta table (D36).
+3. Apply the delta by key, in the way `apply` says (D35):
+   - `COPY_AND_SWAP` (default): copy the current table inside the database (`CREATE TABLE … AS SELECT`, with its indexes), `MERGE` the delta into the copy, then swap the pointer as a FULL refresh does. The previous table becomes a `RETIRED` snapshot.
+   - `IN_PLACE`: `MERGE` the delta into the current table, in one transaction.
+
+   In both:
    - Rows flagged as deleted (`deletes.mode = TOMBSTONE`) become deletes.
    - New keys get the next `__src_row` values. Updated keys keep theirs.
-4. Advance the watermark only when the merge commits.
-5. Keep the staged delta table as **delta batch N** (a numbered snapshot of kind `DELTA`) instead of dropping it, under the snapshot retention rules ([§8.7](#87-retention)). This prepares the change feed (D29).
+4. Advance the watermark only when the swap or the merge commits.
+5. Keep the staged delta table as **delta batch N** (a numbered snapshot of kind `DELTA`) instead of dropping it, under the snapshot retention rules ([§8.7](#87-retention)). This prepares the change feed (D29). Rows re-read only because of `lookback`, and identical to the stored row, are left out of the batch, so the change feed does not report them twice.
+
+**D35 (proposed). An incremental refresh is applied to a copy and swapped in, unless the instance chooses `IN_PLACE`.** Merging into the current table would change it under running readers, so the guarantees of [§8.6](#86-consumer-contract-and-snapshot-pinning) and [§8.7](#87-retention) would hold for FULL replicas only.
+
+| | `COPY_AND_SWAP` | `IN_PLACE` |
+|---|---|---|
+| A pinned run reads one unchanging snapshot | Yes | No. Each statement is consistent on PostgreSQL and Oracle, and on SQL Server only with read-committed snapshot isolation. A run can see different data in two statements. |
+| Roll back to the previous snapshot; diff two snapshots | Yes | No. The admin UI says so. |
+| Tracking's `snapshotId` reproduces what the run saw | Yes | No. It identifies the batch the run started on. |
+| Cost per refresh | One copy of the table inside the database, plus the merge. No extra source calls. | The merge only |
+| Storage | One extra table per retained snapshot | None extra |
+
+`IN_PLACE` is for objects so large that a nightly copy is not acceptable. The threshold at which an admin should choose it is to be measured in P3 (Q21).
+
+**D36 (proposed). Lookback, and a mandatory reconcile.** A timestamp cursor alone loses rows:
+
+- **Late commits.** A row whose transaction commits after a refresh has read past its timestamp is never seen by a strict "modified after the watermark" query. So each refresh re-reads from the watermark minus the capability's `lookback`. The merge by key makes the overlap harmless. `watermarkComparison` states whether the connector's parameter means "after" or "at or after".
+- **Rows that leave the filter.** With an identity parameter that filters rows (`WHERE`), a row changed so that it no longer matches is not returned again, and would stay in the replica.
+- **Changes that do not move the watermark**, such as a Salesforce formula field whose inputs changed on another object.
+
+The last two are repaired only by a FULL refresh. An instance with `mode: INCREMENTAL` must therefore have a `fullReconcile` schedule; creating one without it is refused. A capability without `lookback` gets `PT0S` and a warning in the admin UI.
 
 **Change feed (D29, decided for Q12).** Incremental replicas keep no SCD2 history and offer no "as of T" reads. What they do keep, from P3 on, is the delta batches, which hold the changed rows and the tombstones of each refresh. In P5 a reader can ask for **changes since batch N**:
 
@@ -150,9 +177,10 @@ sequenceDiagram
   RM->>JE: run wrapper graph as svc_salesforce, MODIFIED_SINCE = watermark
   JE->>SF: queryAll (includeDeleted)
   JE->>DB: StoreWriter → DS_007001 (bulk)
+  Note over RM,JE: MODIFIED_SINCE is the watermark minus lookback (D36)
   JE-->>RM: finished OK (rows, max SystemModstamp)
   RM->>DB: validate schema hash and row delta
-  RM->>DB: MERGE delta into current (or swap pointer for FULL)
+  RM->>DB: copy current, MERGE delta into the copy, swap pointer (FULL: swap only, IN_PLACE: MERGE into current)
   RM->>DB: snapshot row (asOf, watermark, rows), state → FRESH
   RM->>RM: invalidate Wrangler preview caches for this connector and parameters
 ```
@@ -164,11 +192,11 @@ Stored per snapshot. Exposed through REST, MCP and the admin UI, in the Wrangler
 | Field | Meaning |
 |---|---|
 | `snapshotId` | Physical version that a consumer pins ([§8.6](#86-consumer-contract-and-snapshot-pinning)) |
-| `asOf` | Source time the snapshot represents: refresh start for FULL, the watermark for INCREMENTAL |
+| `asOf` | The time at which the replica was last known to match the source: the **start time of the last successful refresh**, for FULL and INCREMENTAL alike (D36). It is not the watermark. An object that nobody changed for a week has a week-old watermark and is still current, so measuring staleness from the watermark would expire it. |
 | `loadedAt` | When the load committed |
 | `refreshRunId` | Run of the refresh job, linking to its execution history and log |
 | `rows`, `bytes` | Size |
-| `watermark` | Incremental cursor |
+| `watermark` | Incremental cursor: the highest `watermarkField` loaded. Used only to build the next refresh, never to judge freshness. |
 | `batchNo` | Number of the delta batch for an incremental refresh (D29) |
 | `connectorSchemaHash`, `libraryVersion` | Detect drift after a library upgrade |
 | `state` | `REQUESTED`, `EMPTY`, `FRESH`, `STALE`, `EXPIRED`, `REFRESHING`, `REFRESH_FAILED`, `INCOMPATIBLE`, `DORMANT` |
@@ -202,7 +230,7 @@ This holds for FULL replicas and for INCREMENTAL replicas applied with `COPY_AND
 
 Four independent rules, all enforced by `datastore_maintenance`:
 
-1. **Snapshots.** Keep the last *N* snapshots and none older than *T* (pinned ones excepted). This supports rollback ("re-point to the previous snapshot") and diffs between refreshes. Delta batches (D29) are not counted against *N*. They are kept up to age *T*, so the change feed reaches back as far as the snapshots do.
+1. **Snapshots.** Keep the last *N* snapshots and none older than *T* (pinned ones excepted). This supports rollback ("re-point to the previous snapshot") and diffs between refreshes. Delta batches (D29) are not counted against *N*. They are kept up to age *T*, so the change feed reaches back as far as the snapshots do. An `IN_PLACE` incremental replica (D35) has snapshots only from its FULL refreshes, so rollback returns it to the last reconcile.
 2. **Rows.** Delete rows older than a field-based age, like DM `retention_days`.
 3. **Unused replicas.** After `dropIfUnusedFor` without access, drop the data (state `DORMANT`) and keep the definition. The next use triggers a refresh.
 4. **Compliance purge.** Remove a key, such as a person id, from the current table, all retained snapshots and all delta batches, and record it in the store audit.

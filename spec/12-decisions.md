@@ -37,6 +37,8 @@
 | D32 | Lease registry and pin scope | Issued leases are recorded in the catalog with a heartbeat. Replace, truncate, alter and drop coordinate through it; a table with a lease or a pin is never dropped. A job tree pins a dataset version once for all its members; REST pins per request with a snapshot token. | proposed |
 | D33 | Publishable tables | A run table created with `publishTo` is built logged, in the target's schema, with the target's indexes, so publish `REPLACE` is a pointer swap on all three databases. Without it, publish copies. Statistics are refreshed after each load and publish. | proposed |
 | D34 | REST for applications | API tokens tied to a user and narrowable to namespaces. Keyset paging with a snapshot token. Small writes with idempotency keys and schema version. Upload sessions as REST build-then-publish. Asynchronous operations, rate limits, one error shape. | proposed |
+| D35 | Applying incremental refreshes (amends D19) | By default the delta is merged into a copy of the current table, which is then swapped in, so pinning, rollback and reproducibility hold. `IN_PLACE` is an option for very large objects and gives them up. | proposed |
+| D36 | Incremental correctness (amends D19) | `asOf` is the start of the last successful refresh in both modes. Each refresh re-reads from the watermark minus the capability's `lookback`. `fullReconcile` is required for incremental replicas. | proposed |
 
 ---
 

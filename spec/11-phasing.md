@@ -37,7 +37,10 @@ Exit criteria per phase:
   - Publishing a table created with `publishTo` moves no rows on any of the three databases (D33).
   - A REST upload session is invisible to readers until its commit, and an abandoned one is dropped (D34).
 - **P3**:
-  - A failed refresh never changes what readers see. Snapshot rollback works.
+  - A failed refresh never changes what readers see. Snapshot rollback works for FULL replicas and for `COPY_AND_SWAP` incremental ones; an `IN_PLACE` replica reports that it has none (D35).
+  - A run pinned to a `COPY_AND_SWAP` replica reads the same rows before and after an incremental refresh (D35).
+  - An incremental replica whose source did not change for longer than `hardExpiry` stays `FRESH` while its refreshes succeed (D36).
+  - A row committed at the source after a refresh, with a timestamp before that refresh's watermark and within `lookback`, is in the replica after the next refresh (D36).
   - A FULL refresh that returns more than `maxShrink` fewer rows is refused.
   - A library upgrade that changes connector metadata marks its replicas `INCOMPATIBLE`.
   - An incremental refresh applies Salesforce tombstones as deletes, and a gap longer than `maxGap` escalates to FULL.
